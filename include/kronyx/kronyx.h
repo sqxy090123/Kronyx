@@ -9,5 +9,8 @@
 #include "string.h"
 #include "log.h"
 #include "time.h"
+#include "ecs.h"
+#include "scene.h"
+#include "resource.h"
 
 #endif
