@@ -51,7 +51,7 @@ ctest --test-dir build --output-on-failure
 - [x] P0: Core layer (math, memory, containers, log, time)
 - [x] P1: ECS + Scene + Resource Manager
 - [x] P2: Render RHI + OpenGL stub
-- [ ] P3: Physics engine (SAP, GJK/EPA, PGS solver)
+- [x] P3: Physics engine (SAP, GJK/EPA, PGS solver)
 - [ ] P4: kyx scripting language full stack
 - [ ] P5: ImGui editor + kyx debugger
 - [ ] P6: Example games + Vulkan backend

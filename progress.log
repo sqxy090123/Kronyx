@@ -3,7 +3,7 @@
 Last updated: 2026-08-28 09:00 UTC
 
 ## Current Status
-Phase P3 (Physics Engine) - In Progress
+Phase P4 (kyx Scripting Language) - In Progress
 
 ## Milestones
 
@@ -12,8 +12,8 @@ Phase P3 (Physics Engine) - In Progress
 | P0 Core | Done | 3/3 | ASan clean |
 | P1 ECS | Done | 3/3 | ASan clean |
 | P2 Render | Done | 4/4 | ASan clean |
-| P3 Physics | In Progress | pending | SAP + gravity done |
-| P4 kyx | Pending | - | Lexer/VM not started |
+| P3 Physics | Done | 5/5 | ASan clean |
+| P4 kyx | In Progress | pending | Lexer/VM not started |
 | P5 Editor | Pending | - | ImGui not started |
 | P6 Vulkan | Pending | - | Stub only |
 
@@ -28,10 +28,13 @@ Phase P3 (Physics Engine) - In Progress
 
 ## Next Steps
 
-1. Finish P3: implement GJK/EPA narrowphase and PGS constraint solver
-2. Write P3 unit tests (collision detection, impulse response, sleep)
-3. Commit and push P3
-4. Start P4: kyx scripting language lexer + parser
+1. Start P4: implement kyx lexer (tokenizer), reserved keywords, forced comment preprocessing
+2. Implement kyx recursive-descent parser -> AST
+3. Build register-based KyxVM with bytecode compiler
+4. Add native function registry for C engine binding
+5. Write P4 unit tests (lexer, parser, VM)
+6. Commit and push P4
+7. Start P5: ImGui editor panels
 
 ## Build Commands
 

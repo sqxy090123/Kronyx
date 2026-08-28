@@ -32,7 +32,7 @@ Last updated: 2026-08-28
 - [x] Null-safe backend query
 - [x] Render tests passing
 
-### P3: Physics Engine (In Progress)
+### P3: Physics Engine
 - [x] Physics world create/destroy
 - [x] Collider registration (sphere, box, capsule, plane, mesh)
 - [x] RigidBody registration
@@ -50,8 +50,8 @@ Last updated: 2026-08-28
 
 ## In Progress
 
-### P3: Physics Engine
-Currently at: SAP broadphase + gravity integration working. Next: implement GJK/EPA for narrowphase and PGS constraint solver.
+### P4: kyx Scripting Language
+Implementing lexer, parser, VM, and bytecode compiler.
 
 ---
 
