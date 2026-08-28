@@ -14,5 +14,6 @@
 #include "resource.h"
 #include "render.h"
 #include "physics.h"
+#include "script.h"
 
 #endif

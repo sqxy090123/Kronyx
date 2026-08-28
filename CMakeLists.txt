@@ -36,6 +36,9 @@ add_library(ky_engine STATIC
   src/resource/resource.c
   src/render/render.c
   src/physics/physics.c
+  src/script/script.c
+  src/script/parser.c
+  src/script/vm.c
 )
 target_link_libraries(ky_engine PUBLIC ky_core)
 
@@ -60,4 +63,8 @@ if(KYR_BUILD_TESTS)
   add_executable(ky_test_physics tests/test_physics.c)
   target_link_libraries(ky_test_physics PRIVATE ky_engine)
   add_test(NAME physics COMMAND ky_test_physics)
+
+  add_executable(ky_test_script tests/test_script.c)
+  target_link_libraries(ky_test_script PRIVATE ky_engine)
+  add_test(NAME script COMMAND ky_test_script)
 endif()
