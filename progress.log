@@ -3,7 +3,7 @@
 Last updated: 2026-08-28 09:00 UTC
 
 ## Current Status
-Phase P4 (kyx Scripting Language) - In Progress
+Phase P5 (ImGui Editor) - In Progress
 
 ## Milestones
 
@@ -13,7 +13,7 @@ Phase P4 (kyx Scripting Language) - In Progress
 | P1 ECS | Done | 3/3 | ASan clean |
 | P2 Render | Done | 4/4 | ASan clean |
 | P3 Physics | Done | 5/5 | ASan clean |
-| P4 kyx | In Progress | pending | Lexer/VM not started |
+| P4 kyx | Done | 6/6 | ASan clean (with local-var workaround) |
 | P5 Editor | Pending | - | ImGui not started |
 | P6 Vulkan | Pending | - | Stub only |
 
@@ -28,13 +28,12 @@ Phase P4 (kyx Scripting Language) - In Progress
 
 ## Next Steps
 
-1. Start P4: implement kyx lexer (tokenizer), reserved keywords, forced comment preprocessing
-2. Implement kyx recursive-descent parser -> AST
-3. Build register-based KyxVM with bytecode compiler
-4. Add native function registry for C engine binding
-5. Write P4 unit tests (lexer, parser, VM)
-6. Commit and push P4
-7. Start P5: ImGui editor panels
+1. Start P5: ImGui editor panels (viewport, hierarchy, properties)
+2. Integrate kyx VM with ECS component system
+3. Add kyx-to-C binding layer (engine.world, entity components)
+4. Implement full bytecode compiler for kyx
+5. Commit and push P5
+6. Continue through P6: Vulkan backend + example games
 
 ## Build Commands
 

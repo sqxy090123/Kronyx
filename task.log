@@ -50,21 +50,26 @@ Last updated: 2026-08-28
 
 ## In Progress
 
-### P4: kyx Scripting Language
-Implementing lexer, parser, VM, and bytecode compiler.
+### P5: ImGui Editor
+Implementing viewport, hierarchy, property inspector panels.
 
 ---
 
 ## Pending Phases
 
 ### P4: kyx Scripting Language
-- [ ] Lexer (token stream)
-- [ ] Recursive descent parser -> AST
-- [ ] Semantic module resolver
-- [ ] Bytecode compiler
-- [ ] Register-based KyxVM
-- [ ] Native function registry + marshaling
-- [ ] Forced comment preprocessor
+- [x] Lexer (token stream with line/col tracking)
+- [x] Forced comment preprocessor (`[/*<!--...-->*/]`)
+- [x] Keyword detection (`fun`, `&&`, `||`, `^`)
+- [x] Hex integer support (`0xFF`)
+- [x] Register-based KyxVM (create/destroy/load/call)
+- [x] Native function registry
+- [x] Parser (recursive descent, AST)
+- [x] Bytecode compiler stub
+- [ ] Full bytecode instruction set implementation
+- [ ] Closure/upvalue support
+- [ ] Module system (`use` statement)
+- [ ] C engine binding layer
 
 ### P5: ImGui Editor
 - [ ] Viewport panel (OpenGL rendering)
