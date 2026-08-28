@@ -12,6 +12,8 @@ include(cmake/options.cmake)
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   add_compile_options(-Wall -Wextra -Wno-unused-parameter)
+elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
+  add_compile_options(/W3 /WX-)
 endif()
 
 add_library(ky_core STATIC

@@ -14,16 +14,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         cmake_build_type: [Release, Debug]
-        include:
-          - os: ubuntu-latest
-            cc: gcc
-            cxx: g++
-          - os: windows-latest
-            cc: cl
-            cxx: cl
-          - os: macos-latest
-            cc: clang
-            cxx: clang++
 
     steps:
     - name: Checkout
@@ -41,8 +31,7 @@ jobs:
       run: |
         cmake -B ${{ github.workspace }}/build \
           -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }} \
-          -DKYR_BUILD_TESTS=ON \
-          -DCMAKE_C_COMPILER=${{ matrix.cc }}
+          -DKYR_BUILD_TESTS=ON
 
     - name: Build
       run: cmake --build ${{ github.workspace }}/build --config ${{ matrix.cmake_build_type }} -j2
