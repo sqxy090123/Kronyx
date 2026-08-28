@@ -36,3 +36,11 @@ jobs:
     - name: Run tests
       working-directory: ${{ github.workspace }}/build
       run: ctest --output-on-failure -C ${{ matrix.cmake_build_type }}
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: kronyx-build-${{ matrix.os }}-${{ matrix.cmake_build_type }}
+        path: |
+          ${{ github.workspace }}/build/ky_test_*
+          ${{ github.workspace }}/build/libky_*.a
