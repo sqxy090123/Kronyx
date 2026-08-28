@@ -32,6 +32,7 @@ add_library(ky_engine STATIC
   src/ecs/ecs.c
   src/scene/scene.c
   src/resource/resource.c
+  src/render/render.c
 )
 target_link_libraries(ky_engine PUBLIC ky_core)
 
@@ -48,4 +49,8 @@ if(KYR_BUILD_TESTS)
   add_executable(ky_test_ecs tests/test_ecs.c)
   target_link_libraries(ky_test_ecs PRIVATE ky_engine)
   add_test(NAME ecs COMMAND ky_test_ecs)
+
+  add_executable(ky_test_render tests/test_render.c)
+  target_link_libraries(ky_test_render PRIVATE ky_engine)
+  add_test(NAME render COMMAND ky_test_render)
 endif()

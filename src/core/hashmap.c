@@ -61,6 +61,16 @@ void ky_hashmap_init(kyHashMap *m, kyAllocator *alloc, size_t initial_cap) {
 }
 
 void ky_hashmap_deinit(kyHashMap *m) {
+    for (size_t i = 0; i < m->cap; ++i) {
+        if (m->entries[i].state == KY_HASHMAP_STATE_USED) {
+            if (m->entries[i].owned) {
+                ky_mem_free(m->alloc, (void *)m->entries[i].key);
+            }
+            m->entries[i].state = KY_HASHMAP_STATE_EMPTY;
+            m->entries[i].key = NULL;
+            m->entries[i].value = NULL;
+        }
+    }
     ky_mem_free(m->alloc, m->entries);
     m->entries = NULL;
     m->count = m->cap = m->tomb_count = 0;
@@ -123,11 +133,8 @@ static void hashmap_set_impl(kyHashMap *m, const char *key, void *value, int own
     tomb->key = key;
     tomb->value = value;
     tomb->state = KY_HASHMAP_STATE_USED;
+    tomb->owned = owns_key;
     m->count++;
-    if (owns_key) {
-        (void)0;
-    }
-    KY_UNUSED(owns_key);
 }
 
 void ky_hashmap_set(kyHashMap *m, const char *key, void *value) {

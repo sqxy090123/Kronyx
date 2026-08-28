@@ -16,18 +16,16 @@ kyScene *ky_scene_create(kyAllocator *alloc, const char *name) {
 }
 
 void ky_scene_destroy(kyScene *s) {
-    kyAllocator a = s->alloc;
-    ky_world_destroy(s->world);
-    ky_mem_free(&a, s->name);
     for (size_t i = 0; i < s->meta.cap; ++i) {
         kyHashEntry *e = &s->meta.entries[i];
-        if (e->state == KY_HASHMAP_STATE_USED) {
-            ky_mem_free(&a, (void *)e->key);
-            ky_mem_free(&a, e->value);
+        if (e->state == KY_HASHMAP_STATE_USED && e->owned) {
+            ky_mem_free(&s->alloc, (void *)e->value);
         }
     }
+    ky_world_destroy(s->world);
     ky_hashmap_deinit(&s->meta);
-    ky_mem_free(&a, s);
+    ky_mem_free(&s->alloc, s->name);
+    ky_mem_free(&s->alloc, s);
 }
 
 void ky_scene_set_meta(kyScene *s, const char *key, const char *value) {

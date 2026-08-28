@@ -22,11 +22,14 @@ static void resmgr_release_key(kyResourceManager *m, const char *key) {
 void ky_resmgr_destroy(kyResourceManager *m) {
     for (size_t i = 0; i < m->owned_keys.len; ++i) {
         char *k = *(char **)ky_array_get(&m->owned_keys, i);
+        if (!k) continue;
         kyResource *r = (kyResource *)ky_hashmap_get(&m->resources, k);
         if (r) {
+            ky_hashmap_remove(&m->resources, k);
             ky_mem_free(&m->alloc, r);
         }
         ky_mem_free(&m->alloc, k);
+        *(char **)ky_array_get(&m->owned_keys, i) = NULL;
     }
     ky_array_deinit(&m->owned_keys);
     ky_hashmap_deinit(&m->resources);

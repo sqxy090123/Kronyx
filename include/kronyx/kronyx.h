@@ -12,5 +12,6 @@
 #include "ecs.h"
 #include "scene.h"
 #include "resource.h"
+#include "render.h"
 
 #endif

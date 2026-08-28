@@ -8,6 +8,7 @@ typedef struct kyHashEntry {
     const char *key;
     void *value;
     uint32_t state;
+    uint8_t owned;
 } kyHashEntry;
 
 typedef struct kyHashMap {
