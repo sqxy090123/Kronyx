@@ -1,0 +1,54 @@
+# Kronyx Engine - Progress Log
+
+Last updated: 2026-08-28 09:00 UTC
+
+## Current Status
+Phase P3 (Physics Engine) - In Progress
+
+## Milestones
+
+| Phase | Status | Tests | Notes |
+|-------|--------|-------|-------|
+| P0 Core | Done | 3/3 | ASan clean |
+| P1 ECS | Done | 3/3 | ASan clean |
+| P2 Render | Done | 4/4 | ASan clean |
+| P3 Physics | In Progress | pending | SAP + gravity done |
+| P4 kyx | Pending | - | Lexer/VM not started |
+| P5 Editor | Pending | - | ImGui not started |
+| P6 Vulkan | Pending | - | Stub only |
+
+## Recent Changes
+
+- Fixed hashmap owned-key memory management (2 bugs resolved)
+- Fixed physics.h kySphere redefinition conflict with math.h
+- Fixed physics.c ky_vec3_sub/add call signature (value vs pointer)
+- Fixed physics test zero-gravity assertion logic
+- Created .github/workflows/build.yml (cross-platform CI)
+- Created task.log and progress.log for tracking
+
+## Next Steps
+
+1. Finish P3: implement GJK/EPA narrowphase and PGS constraint solver
+2. Write P3 unit tests (collision detection, impulse response, sleep)
+3. Commit and push P3
+4. Start P4: kyx scripting language lexer + parser
+
+## Build Commands
+
+```bash
+# Configure
+cmake -B build -G "Unix Makefiles" -DKYR_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
+
+# Build
+cmake --build build -j2
+
+# Test
+ctest --test-dir build --output-on-failure
+```
+
+## Key Decisions
+
+- Physics uses flat arrays (not ECS) for simplicity in early phase
+- SAP only sweeps X-axis for broadphase (Y/Z axes deferred)
+- GJK/EPA deferred to later in P3; basic sphere/sphere SAT kept as fallback
+- CI targets ubuntu-latest, windows-latest, macos-latest with GCC/Clang/MSVC

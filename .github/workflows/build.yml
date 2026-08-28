@@ -1,0 +1,52 @@
+name: Build Kronyx
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        cmake_build_type: [Release, Debug]
+        include:
+          - os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+          - os: windows-latest
+            cc: cl
+            cxx: cl
+          - os: macos-latest
+            cc: clang
+            cxx: clang++
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libglfw3-dev libglm-dev libx11-dev libxi-dev libxrandr-dev libgl1-mesa-dev
+
+    - name: Configure CMake
+      run: |
+        cmake -B ${{ github.workspace }}/build \
+          -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }} \
+          -DKYR_BUILD_TESTS=ON \
+          -DCMAKE_C_COMPILER=${{ matrix.cc }}
+
+    - name: Build
+      run: cmake --build ${{ github.workspace }}/build --config ${{ matrix.cmake_build_type }} -j2
+
+    - name: Run tests
+      working-directory: ${{ github.workspace }}/build
+      run: ctest --output-on-failure -C ${{ matrix.cmake_build_type }}

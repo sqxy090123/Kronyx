@@ -13,5 +13,6 @@
 #include "scene.h"
 #include "resource.h"
 #include "render.h"
+#include "physics.h"
 
 #endif

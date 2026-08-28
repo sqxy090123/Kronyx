@@ -1,0 +1,96 @@
+# Kronyx Engine - Task Log
+
+Last updated: 2026-08-28
+
+## Completed Phases
+
+### P0: Core Layer
+- [x] CMake project skeleton
+- [x] Math library (Vec2/3/4, Quat, Mat4, Sphere, AABB)
+- [x] Memory allocator (tracking + default)
+- [x] Dynamic array
+- [x] Hashmap (open addressing, tombstones, owned-key support)
+- [x] String builder
+- [x] Logger
+- [x] High-precision timer
+- [x] All tests passing (ASan clean)
+
+### P1: ECS + Scene + Resource
+- [x] Archetype-based ECS with sparse-set entity tracking
+- [x] System scheduling with ordering
+- [x] Scene management with meta key-value
+- [x] Resource manager with ref counting
+- [x] Hashmap deinit memory leak fix
+- [x] Resource manager double-free fix
+- [x] Scene destroy double-free fix
+- [x] Tests passing (ASan clean)
+
+### P2: Render RHI + OpenGL Stub
+- [x] Render device abstraction (kyRenderDevice)
+- [x] Shader / Buffer / Texture / Pipeline / CommandList opaque types
+- [x] OpenGL stub backend
+- [x] Null-safe backend query
+- [x] Render tests passing
+
+### P3: Physics Engine (In Progress)
+- [x] Physics world create/destroy
+- [x] Collider registration (sphere, box, capsule, plane, mesh)
+- [x] RigidBody registration
+- [x] Gravity integration (semi-implicit Euler)
+- [x] SAP broadphase (AABB sweep on X axis)
+- [x] AABB query
+- [x] Impulse application
+- [x] Raycast stub (returns no hit)
+- [ ] GJK/EPA narrowphase collision detection
+- [ ] Contact constraint resolution (PGS solver)
+- [ ] Sleep management
+- [ ] CCD (continuous collision detection)
+
+---
+
+## In Progress
+
+### P3: Physics Engine
+Currently at: SAP broadphase + gravity integration working. Next: implement GJK/EPA for narrowphase and PGS constraint solver.
+
+---
+
+## Pending Phases
+
+### P4: kyx Scripting Language
+- [ ] Lexer (token stream)
+- [ ] Recursive descent parser -> AST
+- [ ] Semantic module resolver
+- [ ] Bytecode compiler
+- [ ] Register-based KyxVM
+- [ ] Native function registry + marshaling
+- [ ] Forced comment preprocessor
+
+### P5: ImGui Editor
+- [ ] Viewport panel (OpenGL rendering)
+- [ ] Entity hierarchy tree
+- [ ] Property inspector
+- [ ] Console / log panel
+- [ ] Performance monitor (FPS, draw calls, physics)
+- [ ] kyx debugger (step, break, watch)
+- [ ] Hot reload for kyx scripts
+
+### P6: Examples + Vulkan
+- [ ] 2D platformer demo
+- [ ] 3D navigation demo
+- [ ] Vulkan backend skeleton (RHI abstraction complete, implementation deferred)
+- [ ] Final integration test
+
+---
+
+## Bug Fixes Applied
+
+| Issue | Fix |
+|-------|-----|
+| hashmap deinit leaked owned keys | Added `owned` field to kyHashEntry, free in deinit |
+| hashmap deinit incorrectly freed stack values | Only free when `owned` flag is set |
+| scene destroy double-free on meta values | Remove from hashmap first in resmgr destroy |
+| physics.h redefined kySphere (dup in math.h) | Removed redundant typedef from physics.h |
+| physics.c used pointer API for ky_vec3_sub/add | Fixed to pass values by copy |
+| render test return code hardcoded to 7 | Changed to use failures counter |
+| physics zero-gravity test | Reset velocity before asserting no change |
