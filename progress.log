@@ -75,3 +75,13 @@ ctest --test-dir build --output-on-failure
 - Function calls return incorrect values (-1.0 instead of expected results)
 - Bytecode generation is correct but VM execution has issues
 - Full test suite may hang, needs investigation
+
+## P4 Continuation: Force Field System
+- [x] Design force field data structures (kyForceField)
+- [x] Implement gravity formula: F = G*m1*m2/(r^2+ε^2)
+- [x] Implement repulsion formula: F = -G*m1*m2/(r^2+ε^2)
+- [x] Implement vortex field (tangential force)
+- [x] Add field management to PhysicsWorld
+- [x] Apply fields in physics_step
+- [x] Unit tests added and passing
+- Note: Multiple gravity/repulsion fields now supported (up to 64)
