@@ -85,3 +85,13 @@ ctest --test-dir build --output-on-failure
 - [x] Apply fields in physics_step
 - [x] Unit tests added and passing
 - Note: Multiple gravity/repulsion fields now supported (up to 64)
+
+## Force Field System (Completed)
+- [x] Design force field data structures
+- [x] Implement gravity formula: F = G*m1*m2/(r^2+ε^2)
+- [x] Implement repulsion formula with negative strength
+- [x] Implement vortex field (tangential force)
+- [x] Add radius-based falloff
+- [x] Support up to 64 concurrent force fields
+- [x] Unit tests: 30 tests passing
+- [ ] TODO: Multiple gravity/repulsion fields for 3D games (future enhancement)

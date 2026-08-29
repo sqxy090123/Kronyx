@@ -73,3 +73,14 @@ Entries discovered by the Agent during task execution should follow this format:
   - 最大支持 64 个并发力场
   - 力场有半径限制，超过半径无力作用
   - 平方反比衰减 + 软化处理防止奇点
+
+[Project Knowledge Summary]
+- Date: 2026-08-29
+- Context: Completed force field system implementation
+- Category: Build Methods
+- Instructions:
+  - Force field test count: 30 tests, all passing
+  - Formula: F = G * m1 * m2 / (r^2 + 0.01^2)
+  - Softening factor ε = 0.01 prevents singularity
+  - Max 64 concurrent force fields per physics world
+  - Force field API: add, remove, get, set, count
