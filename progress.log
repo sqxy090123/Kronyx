@@ -33,7 +33,7 @@
 - [x] Compiler: AST-to-bytecode with register allocation, binary/unary ops, control flow
 - [x] VM execution loop: 40+ opcodes implemented
 - [x] Function loading and global registration
-- [ ] Call/return mechanism needs debugging: 13 new tests fail
+- [ ] Call/return mechanism has bugs: 13 new tests fail due to incorrect return values
 - [ ] 93/106 tests passing (88%)
 
 ## P5: Editor & Asset Pipeline
@@ -57,6 +57,7 @@
 - SAP only sweeps X-axis for broadphase (Y/Z axes deferred)
 - GJK/EPA deferred to later in P3; basic sphere/sphere SAT kept as fallback
 - CI targets ubuntu-latest, windows-latest, macos-latest with GCC/Clang/MSVC
+- Code is original implementation, no third-party code copied
 
 ## Build
 
@@ -67,3 +68,10 @@ cmake --build build -j2
 # Test
 ctest --test-dir build --output-on-failure
 ```
+
+## Known Issues
+
+- P4 Script VM call/return mechanism has bugs
+- Function calls return incorrect values (-1.0 instead of expected results)
+- Bytecode generation is correct but VM execution has issues
+- Full test suite may hang, needs investigation
