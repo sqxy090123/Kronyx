@@ -36,6 +36,7 @@ add_library(ky_engine STATIC
   src/resource/resource.c
   src/render/render.c
   src/physics/physics.c
+  src/physics/force_field.c
   src/script/script.c
   src/script/parser.c
   src/script/vm.c

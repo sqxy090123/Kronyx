@@ -58,3 +58,12 @@ KY_API void            ky_physics_cast_ray(const kyPhysicsWorld *pw, kyVec3 orig
 KY_API void            ky_physics_get_aabb(const kyPhysicsWorld *pw, uint32_t body, kyVec3 *min_out, kyVec3 *max_out);
 
 #endif
+
+/* Force field support */
+#include "kronyx/force_field.h"
+
+KY_API uint32_t      ky_physics_add_force_field(kyPhysicsWorld *pw, const kyForceField *field);
+KY_API int           ky_physics_remove_force_field(kyPhysicsWorld *pw, uint32_t id);
+KY_API int           ky_physics_get_force_field_count(const kyPhysicsWorld *pw);
+KY_API kyForceField  ky_physics_get_force_field(const kyPhysicsWorld *pw, uint32_t id);
+KY_API void          ky_physics_set_force_field(kyPhysicsWorld *pw, uint32_t id, kyForceField field);

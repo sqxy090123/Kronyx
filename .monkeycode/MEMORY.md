@@ -61,3 +61,15 @@ Entries discovered by the Agent during task execution should follow this format:
   - Issue seems to be in VM execution loop, possibly related to stack management or memory corruption
   - Tests hang when running full test suite, may be due to infinite loop in VM
   - Need to investigate OP_ADD and other arithmetic operations
+
+[Project Knowledge Summary]
+- Date: 2026-08-29
+- Context: Added force field system to physics engine
+- Category: Build Methods
+- Instructions:
+  - 引力场公式: F = G * m1 * m2 / (r^2 + epsilon^2)，方向指向场源
+  - 斥力场公式: F = -G * m1 * m2 / (r^2 + epsilon^2)，方向远离场源
+  - 涡流场: 切向力，用于旋转效果
+  - 最大支持 64 个并发力场
+  - 力场有半径限制，超过半径无力作用
+  - 平方反比衰减 + 软化处理防止奇点
