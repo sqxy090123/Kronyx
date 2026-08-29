@@ -16,6 +16,7 @@ static int failures = 0;
     } \
 } while(0)
 
+static void test_force_fields(void);
 int main(void) {
     printf("=== Physics Test ===\n");
 
@@ -96,6 +97,7 @@ int main(void) {
     ky_physics_cast_ray(NULL, (kyVec3){0,0,0}, (kyVec3){0,-1,0}, 1.0f, &hit);
     ky_physics_get_aabb(NULL, body_id, &aabb_min, &aabb_max);
 
+    test_force_fields();
     printf("\n=== %d tests ran, %d failures ===\n", assertions, failures);
 
     ky_physics_destroy(pw);
