@@ -15,6 +15,16 @@ static int failures = 0;
     } \
 } while(0)
 
+static kyValue make_int(int64_t i) {
+    kyValue v; v.type = KYT_INT; v.as.ival = i; return v;
+}
+static kyValue make_float(double f) {
+    kyValue v; v.type = KYT_FLOAT; v.as.fval = f; return v;
+}
+static kyValue make_nil(void) {
+    kyValue v; memset(&v, 0, sizeof(v)); v.type = KYT_NIL; return v;
+}
+
 static void test_lexer_basic(void) {
     const char *src = "var x = 42;";
     kyLexer *lx = kyx_lexer_create(src, "test");
@@ -214,10 +224,191 @@ static void test_null_safety(void) {
     ky_vm_destroy(vm);
 }
 
+static kyValue native_print(kyVM *vm, kyValue *args, int argc, void *user) {
+    KY_UNUSED(vm); KY_UNUSED(user);
+    for (int i = 0; i < argc; i++) {
+        if (args[i].type == KYT_STRING)
+            printf("%s", args[i].as.sval);
+        else if (args[i].type == KYT_INT)
+            printf("%lld", (long long)args[i].as.ival);
+        else if (args[i].type == KYT_FLOAT)
+            printf("%f", args[i].as.fval);
+        else if (args[i].type == KYT_BOOL)
+            printf(args[i].as.ival ? "true" : "false");
+        else
+            printf("nil");
+    }
+    return make_nil();
+}
+
+static void test_compile_exec(void) {
+    /* Test 1: Simple function call with return */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        ASSERT(vm != NULL, "create VM for exec test");
+        const char *src = "function add(a, b) { return a + b; }";
+        int r = ky_vm_load_string(vm, src, "add");
+        ASSERT(r == 0, "load function add");
+        kyValue args[2];
+        args[0] = make_int(3);
+        args[1] = make_int(4);
+        kyValue ret;
+        r = ky_vm_call(vm, "add", args, 2, &ret);
+        ASSERT(r == 0, "call add(3, 4)");
+        ASSERT(ret.type == KYT_FLOAT, "add returns float");
+        ASSERT(ret.as.fval == 7.0, "add(3,4) == 7");
+        ky_vm_destroy(vm);
+    }
+
+    /* Test 2: Arithmetic expressions */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        const char *src = "function calc(x) { return x * 2 + 1; }";
+        int r = ky_vm_load_string(vm, src, "calc");
+        ASSERT(r == 0, "load function calc");
+        kyValue args[1];
+        args[0] = make_int(5);
+        kyValue ret;
+        r = ky_vm_call(vm, "calc", args, 1, &ret);
+        ASSERT(r == 0, "call calc(5)");
+        ASSERT(ret.as.fval == 11.0, "calc(5) == 11");
+        ky_vm_destroy(vm);
+    }
+
+    /* Test 3: If statement */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        const char *src = "function abs(x) { if (x < 0) { return -x; } return x; }";
+        int r = ky_vm_load_string(vm, src, "abs");
+        ASSERT(r == 0, "load function abs");
+        kyValue args[1];
+        args[0] = make_int(-5);
+        kyValue ret;
+        r = ky_vm_call(vm, "abs", args, 1, &ret);
+        ASSERT(r == 0, "call abs(-5)");
+        ASSERT(ret.as.fval == 5.0, "abs(-5) == 5");
+        ky_vm_destroy(vm);
+    }
+
+    /* Test 4: While loop */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        const char *src = "function sum(n) { var s = 0; var i = 1; while (i <= n) { s = s + i; i = i + 1; } return s; }";
+        int r = ky_vm_load_string(vm, src, "sum");
+        ASSERT(r == 0, "load function sum");
+        kyValue args[1];
+        args[0] = make_int(5);
+        kyValue ret;
+        r = ky_vm_call(vm, "sum", args, 1, &ret);
+        ASSERT(r == 0, "call sum(5)");
+        ASSERT(ret.as.fval == 15.0, "sum(5) == 15");
+        ky_vm_destroy(vm);
+    }
+
+    /* Test 5: For loop */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        const char *src = "function factorial(n) { var r = 1; for (var i = 1; i <= n; i = i + 1) { r = r * i; } return r; }";
+        int r = ky_vm_load_string(vm, src, "factorial");
+        ASSERT(r == 0, "load function factorial");
+        kyValue args[1];
+        args[0] = make_int(5);
+        kyValue ret;
+        r = ky_vm_call(vm, "factorial", args, 1, &ret);
+        ASSERT(r == 0, "call factorial(5)");
+        ASSERT(ret.as.fval == 120.0, "factorial(5) == 120");
+        ky_vm_destroy(vm);
+    }
+
+    /* Test 6: Comparison operators */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        const char *src = "function cmp(a, b) { if (a == b) { return 1; } if (a != b) { return 2; } if (a < b) { return 3; } if (a > b) { return 4; } return 0; }";
+        int r = ky_vm_load_string(vm, src, "cmp");
+        ASSERT(r == 0, "load function cmp");
+        /* Test equality */
+        kyValue args[2];
+        args[0] = make_int(5);
+        args[1] = make_int(5);
+        kyValue ret;
+        ky_vm_call(vm, "cmp", args, 2, &ret);
+        ASSERT(ret.as.fval == 1.0, "5 == 5 returns 1");
+        /* Test less than */
+        args[0] = make_int(3);
+        args[1] = make_int(5);
+        ky_vm_call(vm, "cmp", args, 2, &ret);
+        ASSERT(ret.as.fval == 3.0, "3 < 5 returns 3");
+        /* Test greater than */
+        args[0] = make_int(10);
+        args[1] = make_int(5);
+        ky_vm_call(vm, "cmp", args, 2, &ret);
+        ASSERT(ret.as.fval == 4.0, "10 > 5 returns 4");
+        ky_vm_destroy(vm);
+    }
+
+    /* Test 7: Boolean logic */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        const char *src = "function logical_test() { if (true && false) { return 1; } if (true || false) { return 2; } if (!false) { return 3; } return 0; }";
+        int r = ky_vm_load_string(vm, src, "logical_test");
+        ASSERT(r == 0, "load function logical_test");
+        kyValue ret;
+        r = ky_vm_call(vm, "logical_test", NULL, 0, &ret);
+        ASSERT(r == 0, "call logical_test");
+        ASSERT(ret.as.fval == 3.0, "logical_test returns 3");
+        ky_vm_destroy(vm);
+    }
+
+    /* Test 8: Native print */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        ky_vm_register_native(vm, "std", "print", native_print, NULL);
+        const char *src = "function greet() { std.print(\"hello\"); return 42; }";
+        int r = ky_vm_load_string(vm, src, "greet");
+        ASSERT(r == 0, "load function greet with native print");
+        kyValue ret;
+        r = ky_vm_call(vm, "greet", NULL, 0, &ret);
+        ASSERT(r == 0, "call greet");
+        ASSERT(ret.as.fval == 42.0, "greet returns 42");
+        ky_vm_destroy(vm);
+    }
+
+    /* Test 9: Nested function calls */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        const char *src = "function double(x) { return x * 2; } function quad(x) { return double(double(x)); }";
+        int r = ky_vm_load_string(vm, src, "nested");
+        ASSERT(r == 0, "load nested functions");
+        kyValue args[1];
+        args[0] = make_int(3);
+        kyValue ret;
+        r = ky_vm_call(vm, "quad", args, 1, &ret);
+        ASSERT(r == 0, "call quad(3)");
+        ASSERT(ret.as.fval == 12.0, "quad(3) == 12");
+        ky_vm_destroy(vm);
+    }
+
+    /* Test 10: Function with multiple statements */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        const char *src = "function max(a, b) { if (a > b) { return a; } else { return b; } }";
+        int r = ky_vm_load_string(vm, src, "max");
+        ASSERT(r == 0, "load function max");
+        kyValue args[2];
+        args[0] = make_int(10);
+        args[1] = make_int(20);
+        kyValue ret;
+        r = ky_vm_call(vm, "max", args, 2, &ret);
+        ASSERT(r == 0, "call max(10, 20)");
+        ASSERT(ret.as.fval == 20.0, "max(10,20) == 20");
+        ky_vm_destroy(vm);
+    }
+}
+
 int main(void) {
     printf("=== Script (kyx) Test ===\n");
 
-    test_lexer_basic();
+    printf("1\n"); test_lexer_basic();
     test_lexer_keywords();
     test_lexer_operators();
     test_lexer_strings_numbers();
@@ -227,6 +418,7 @@ int main(void) {
     test_vm_load_string();
     test_vm_register_native();
     test_null_safety();
+    printf("10\n"); test_compile_exec();
 
     printf("\n=== %d tests ran, %d failures ===\n", assertions, failures);
     return failures == 0 ? 0 : 1;

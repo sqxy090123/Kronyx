@@ -99,3 +99,12 @@ Implementing viewport, hierarchy, property inspector panels.
 | physics.c used pointer API for ky_vec3_sub/add | Fixed to pass values by copy |
 | render test return code hardcoded to 7 | Changed to use failures counter |
 | physics zero-gravity test | Reset velocity before asserting no change |
+
+## P4 Script Compiler + VM - In Progress
+- Lexer complete
+- Parser complete
+- Compiler implemented (AST to bytecode)
+- VM execution loop implemented
+- Call/return mechanism has bugs: function calls return incorrect values
+- Debugging ongoing: bytecode generation is correct but VM execution produces wrong results
+- 93/106 tests passing (88%)

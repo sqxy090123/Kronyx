@@ -9,83 +9,7 @@
 #define KYX_MAX_TOKENS 8192
 #define KYX_ERR_LEN    256
 
-typedef struct kyTokenStream {
-    kyToken tokens[KYX_MAX_TOKENS];
-    int     count;
-    int     pos;
-} kyTokenStream;
 
-typedef enum kyAstKind {
-    KY_AST_PROGRAM, KY_AST_USE_DECL, KY_AST_VAR_DECL,
-    KY_AST_FUNC_DECL, KY_AST_CLASS_DECL, KY_AST_IF_STMT,
-    KY_AST_WHILE_STMT, KY_AST_FOR_STMT, KY_AST_RETURN_STMT,
-    KY_AST_EXPR_STMT, KY_AST_BLOCK, KY_AST_EXPR_BINOP,
-    KY_AST_EXPR_UNOP, KY_AST_EXPR_LITERAL, KY_AST_EXPR_IDENT,
-    KY_AST_EXPR_CALL, KY_AST_EXPR_INDEX, KY_AST_EXPR_FIELD,
-    KY_AST_EXPR_NEW, KY_AST_EXPR_ANON_FUNC, KY_AST_EXPR_TERNARY,
-} kyAstKind;
-
-typedef struct kyAstNode kyAstNode;
-typedef struct kyAstProto kyAstProto;
-typedef struct kyAstClass kyAstClass;
-
-struct kyAstNode {
-    kyAstKind kind;
-    int       line;
-    kyAstNode *next;
-    union {
-        struct { kyAstNode **children; int count; int cap; } program;
-        struct { char *scope; char *path; char *ns; } use_decl;
-        struct { char *name; kyAstNode *init; int is_const; } var_decl;
-        struct { char *name; char **params; int param_count; kyAstNode *body; kyAstProto *proto; } func_decl;
-        struct { char *name; char *parent; kyAstClass *klass; kyAstNode *body; } class_decl;
-        struct { kyAstNode *cond; kyAstNode *then_b; kyAstNode *else_b; } if_stmt;
-        struct { kyAstNode *cond; kyAstNode *body; } while_stmt;
-        struct { kyAstNode *init; kyAstNode *cond; kyAstNode *inc; kyAstNode *body; } for_stmt;
-        struct { kyAstNode *expr; } return_stmt;
-        struct { kyAstNode *expr; } expr_stmt;
-        struct { kyAstNode **stmts; int count; int cap; } block;
-        struct { kyAstNode **exprs; int count; int cap; } expr_list;
-        struct { kyAstNode *left; kyAstNode *right; char op[8]; } binop;
-        struct { char op[4]; kyAstNode *operand; } unop;
-        struct { kyToken tok; } literal;
-        struct { char *name; } ident;
-        struct { kyAstNode *callee; kyAstNode **args; int arg_count; } call;
-        struct { kyAstNode *obj; kyAstNode *idx; } index;
-        struct { kyAstNode *obj; char *field; } field;
-        struct { char *class_name; kyAstNode **args; int arg_count; } new_expr;
-        struct { char **params; int param_count; kyAstNode *body; kyAstProto *proto; } anon_func;
-        struct { kyAstNode *cond; kyAstNode *true_b; kyAstNode *false_b; } ternary;
-    } as;
-};
-
-struct kyAstProto {
-    int *code;
-    int  code_count;
-    int  code_cap;
-    double *constants;
-    int   const_count;
-    int   const_cap;
-    char **strings;
-    int   str_count;
-    int   max_stack;
-    int   param_count;
-};
-
-struct kyAstClass {
-    char        name[128];
-    char        parent[128];
-    kyAstNode  **fields;
-    int         field_count;
-    int         field_cap;
-};
-
-typedef struct kyParser {
-    kyTokenStream *stream;
-    kyAstNode     *root;
-    int            error_count;
-    char           error_msg[256];
-} kyParser;
 
 static const char *const keywords[] = {
     "use","namespace","if","else","while","for","break","continue",
@@ -98,6 +22,7 @@ static kyAstNode *ast_new(kyAstKind kind, int line);
 static void ast_free(kyAstNode *n);
 static kyAstNode *parse_expression(kyParser *p, int prec);
 static kyAstNode *parse_statement(kyParser *p);
+static kyAstNode *parse_block_content(kyParser *p);
 static kyAstNode *parse_block(kyParser *p);
 
 static void parser_error(kyParser *p, const char *fmt, ...) {
@@ -116,7 +41,8 @@ static kyToken *tok_current(kyParser *p) {
 
 static kyToken *tok_advance(kyParser *p) {
     if (p->stream->pos < p->stream->count) p->stream->pos++;
-    return tok_current(p);
+    kyToken *t = tok_current(p);
+    return t;
 }
 
 static int tok_at_eof(kyParser *p) {
@@ -132,7 +58,8 @@ static kyToken *tok_consume(kyParser *p, kyTokenKind kind, const char *msg) {
                      (t->kind==KYX_TK_IDENT?"identifier":"token"), t->line);
         return NULL;
     }
-    return tok_advance(p);
+    tok_advance(p);
+    return t;
 }
 
 static kyAstNode *ast_new(kyAstKind kind, int line) {
@@ -343,16 +270,34 @@ static struct { const char *op; int prec; int right_assoc; } binops[] = {
 };
 
 static int find_binop(kyToken *t) {
+    /* Single-char operators identified by token kind */
+    switch (t->kind) {
+        case KYX_TK_EQ:       return 0;  /* == */
+        case KYX_TK_NEQ:      return 1;  /* != */
+        case KYX_TK_LT:       return 2;  /* < */
+        case KYX_TK_LE:       return 3;  /* <= */
+        case KYX_TK_GT:       return 4;  /* > */
+        case KYX_TK_GE:       return 5;  /* >= */
+        case KYX_TK_SHL:      return 6;  /* << */
+        case KYX_TK_SHR:      return 7;  /* >> */
+        case KYX_TK_PLUS:     return 8;  /* + */
+        case KYX_TK_MINUS:    return 9;  /* - */
+        case KYX_TK_STAR:     return 10; /* * */
+        case KYX_TK_SLASH:    return 11; /* / */
+        case KYX_TK_MOD:      return 12; /* % */
+        case KYX_TK_AND:      return 13; /* && */
+        case KYX_TK_OR:       return 14; /* || */
+        case KYX_TK_BNOT:     return 15; /* & */
+        case KYX_TK_ASSIGN:   return 16; /* = */
+        case KYX_TK_PLUSEQ:   return 17; /* += */
+        case KYX_TK_MINUSEQ:  return 18; /* -= */
+        case KYX_TK_STAREQ:   return 19; /* *= */
+        case KYX_TK_DIVEQ:    return 20; /* /= */
+    }
+    /* Multi-char operators from lexer (as IDENT tokens) */
     for (int i = 0; binops[i].op; i++) {
         if (t->kind == KYX_TK_IDENT && t->len == strlen(binops[i].op) && memcmp(t->start, binops[i].op, t->len) == 0)
             return i;
-    }
-    /* Also handle multi-char operators from lexer */
-    if (t->len >= 2) {
-        for (int i = 0; binops[i].op; i++) {
-            if (strlen(binops[i].op) == (size_t)t->len && memcmp(t->start, binops[i].op, t->len) == 0)
-                return i;
-        }
     }
     return -1;
 }
@@ -368,7 +313,7 @@ static kyAstNode *parse_expression(kyParser *p, int min_prec) {
         int right_assoc = binops[op_idx].right_assoc;
         tok_advance(p);
         kyAstNode *n = ast_new(KY_AST_EXPR_BINOP, t->line);
-        strncpy(n->as.binop.op, t->start, sizeof(n->as.binop.op) - 1);
+        strncpy(n->as.binop.op, t->start, t->len < sizeof(n->as.binop.op) - 1 ? t->len : sizeof(n->as.binop.op) - 1);
         n->as.binop.left = left;
         n->as.binop.right = parse_expression(p, right_assoc ? prec : prec + 1);
         if (!n->as.binop.right) { ast_free(n); return left; }
@@ -377,10 +322,8 @@ static kyAstNode *parse_expression(kyParser *p, int min_prec) {
     return left;
 }
 
-static kyAstNode *parse_block(kyParser *p) {
-    kyToken *open = tok_consume(p, KYX_TK_LBRACE, "expected '{'");
-    if (!open) return NULL;
-    kyAstNode *n = ast_new(KY_AST_BLOCK, open->line);
+static kyAstNode *parse_block_content(kyParser *p) {
+    kyAstNode *n = ast_new(KY_AST_BLOCK, 1);
     n->as.block.count = 0; n->as.block.cap = 16;
     n->as.block.stmts = (kyAstNode **)calloc((size_t)n->as.block.cap, sizeof(kyAstNode *));
     while (!tok_at_eof(p) && tok_current(p)->kind != KYX_TK_RBRACE) {
@@ -393,6 +336,13 @@ static kyAstNode *parse_block(kyParser *p) {
             n->as.block.stmts[n->as.block.count++] = s;
         }
     }
+    return n;
+}
+
+static kyAstNode *parse_block(kyParser *p) {
+    kyToken *open = tok_consume(p, KYX_TK_LBRACE, "expected '{'");
+    if (!open) return NULL;
+    kyAstNode *n = parse_block_content(p);
     tok_consume(p, KYX_TK_RBRACE, "expected '}'");
     return n;
 }
@@ -422,6 +372,7 @@ static kyAstNode *parse_statement(kyParser *p) {
         kyAstNode *n = ast_new(KY_AST_FUNC_DECL, t->line);
         n->as.func_decl.name = (char *)malloc(fname->len + 1);
         if (n->as.func_decl.name) { memcpy(n->as.func_decl.name, fname->start, fname->len); n->as.func_decl.name[fname->len] = '\0'; }
+
         n->as.func_decl.param_count = 0; n->as.func_decl.params = NULL; n->as.func_decl.proto = NULL;
         tok_consume(p, KYX_TK_LPAREN, "expected '('");
         while (!tok_at_eof(p) && tok_current(p)->kind != KYX_TK_RPAREN) {
@@ -464,11 +415,11 @@ static kyAstNode *parse_statement(kyParser *p) {
         tok_consume(p, KYX_TK_LPAREN, "expected '('");
         kyAstNode *cond = parse_expression(p, 1);
         tok_consume(p, KYX_TK_RPAREN, "expected ')'");
-        kyAstNode *then_b = parse_statement(p);
+        kyAstNode *then_b = parse_block(p);
         kyAstNode *else_b = NULL;
         if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_ELSE) {
             tok_advance(p);
-            else_b = parse_statement(p);
+            else_b = parse_block(p);
         }
         kyAstNode *n = ast_new(KY_AST_IF_STMT, t->line);
         n->as.if_stmt.cond = cond; n->as.if_stmt.then_b = then_b; n->as.if_stmt.else_b = else_b;
@@ -479,7 +430,7 @@ static kyAstNode *parse_statement(kyParser *p) {
         tok_consume(p, KYX_TK_LPAREN, "expected '('");
         kyAstNode *cond = parse_expression(p, 1);
         tok_consume(p, KYX_TK_RPAREN, "expected ')'");
-        kyAstNode *body = parse_statement(p);
+        kyAstNode *body = parse_block(p);
         kyAstNode *n = ast_new(KY_AST_WHILE_STMT, t->line);
         n->as.while_stmt.cond = cond; n->as.while_stmt.body = body;
         return n;
@@ -489,9 +440,28 @@ static kyAstNode *parse_statement(kyParser *p) {
         tok_consume(p, KYX_TK_LPAREN, "expected '('");
         kyAstNode *init = NULL, *cond = NULL, *inc = NULL;
         if (!tok_at_eof(p) && tok_current(p)->kind != KYX_TK_SEMI) {
-            init = parse_expression(p, 1);
+            /* Check if it's a variable declaration */
+            kyToken *tt = tok_current(p);
+            if (tt->kind == KYX_TK_VAR || tt->kind == KYX_TK_LET || tt->kind == KYX_TK_CONST) {
+                int is_const = (tt->kind == KYX_TK_CONST);
+                tok_advance(p);
+                kyToken *name = tok_consume(p, KYX_TK_IDENT, "expected variable name");
+                if (name) {
+                    init = ast_new(KY_AST_VAR_DECL, tt->line);
+                    init->as.var_decl.name = (char *)malloc(name->len + 1);
+                    if (init->as.var_decl.name) { memcpy(init->as.var_decl.name, name->start, name->len); init->as.var_decl.name[name->len] = '\0'; }
+                    init->as.var_decl.is_const = is_const;
+                    if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_ASSIGN) {
+                        tok_advance(p);
+                        init->as.var_decl.init = parse_expression(p, 1);
+                    }
+                    tok_consume(p, KYX_TK_SEMI, "expected ';' in for");
+                }
+            } else {
+                init = parse_expression(p, 1);
+            }
         }
-        tok_consume(p, KYX_TK_SEMI, "expected ';' in for");
+        if (!init) tok_consume(p, KYX_TK_SEMI, "expected ';' in for");
         if (!tok_at_eof(p) && tok_current(p)->kind != KYX_TK_SEMI) {
             cond = parse_expression(p, 1);
         }
@@ -500,7 +470,7 @@ static kyAstNode *parse_statement(kyParser *p) {
             inc = parse_expression(p, 1);
         }
         tok_consume(p, KYX_TK_RPAREN, "expected ')'");
-        kyAstNode *body = parse_statement(p);
+        kyAstNode *body = parse_block(p);
         kyAstNode *n = ast_new(KY_AST_FOR_STMT, t->line);
         n->as.for_stmt.init = init; n->as.for_stmt.cond = cond;
         n->as.for_stmt.inc = inc; n->as.for_stmt.body = body;

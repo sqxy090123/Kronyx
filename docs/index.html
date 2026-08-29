@@ -1,0 +1,1777 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><title>Kronyx架构白皮书</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:40px auto;max-width:900px;line-height:1.7;color:#333}
+h1{border-bottom:2px solid #333;padding-bottom:10px}
+h2{border-bottom:1px solid #ccc;padding-bottom:6px;margin-top:30px}
+pre{background:#f5f5f5;padding:14px;overflow-x:auto;border-radius:4px}
+code{background:#f5f5f5;padding:2px 5px;border-radius:3px;font-size:0.9em}
+pre code{background:none;padding:0}
+table{border-collapse:collapse;width:100%;margin:16px 0}
+th,td{border:1px solid #ddd;padding:10px;text-align:left}
+th{background:#f0f0f0;font-weight:600}
+blockquote{border-left:4px solid #ccc;padding-left:16px;color:#666;margin:16px 0}
+</style></head><body><h1 id="kronyx">Kronyx 游戏引擎架构设计白皮书</h1>
+<blockquote>
+<p>版本：v1.0
+作者：Kronyx 首席架构师
+状态：设计定稿，供工程实施参考</p>
+</blockquote>
+<hr />
+<h2 id="_1">目录</h2>
+<ol>
+<li><a href="#1-项目概述与设计理念">项目概述与设计理念</a></li>
+<li><a href="#2-总体架构与模块划分">总体架构与模块划分</a></li>
+<li><a href="#3-核心类接口定义c-面向对象模拟">核心类/接口定义（C 面向对象模拟）</a></li>
+<li><a href="#4-核心运行时">核心运行时</a></li>
+<li><a href="#5-图形渲染模块">图形渲染模块</a></li>
+<li><a href="#6-物理引擎">物理引擎</a></li>
+<li><a href="#7-脚本系统概览">脚本系统概览</a></li>
+<li><a href="#8-kronyx-脚本语言规范与实现">Kronyx 脚本语言规范与实现</a></li>
+<li><a href="#9-python-绑定与工具链">Python 绑定与工具链</a></li>
+<li><a href="#10-gui-编辑器">GUI 编辑器</a></li>
+<li><a href="#11-构建系统">构建系统</a></li>
+<li><a href="#12-示例游戏">示例游戏</a></li>
+<li><a href="#13-编译与集成说明">编译与集成说明</a></li>
+<li><a href="#14-开发路线图">开发路线图</a></li>
+<li><a href="#15-关键技术决策汇总">关键技术决策汇总</a></li>
+</ol>
+<hr />
+<h2 id="1">1. 项目概述与设计理念</h2>
+<h3 id="11">1.1 项目定位</h3>
+<p>Kronyx 是一款<strong>跨平台、面向数据、可嵌入脚本</strong>的游戏引擎，支持 2D 与 3D 图形渲染，内置物理引擎与脚本系统，并配备图形化编辑器面板（场景编辑、属性检查、调试控制台、性能监控）。目标平台为 Windows、Linux、macOS。</p>
+<p>Kronyx 的独特之处在于其<strong>原生脚本语言</strong>：引擎内置了名为 Kronyx（简称 <strong>kyx</strong>）的语言。kyx 采用类 Java 的控制流语法，带有一个"可插入任意位置且不影响语义"的<strong>强制注释</strong>机制，通过自定义虚拟机（KyxVM）执行，并与 C 核心通过稳定的 ABI 交互。</p>
+<h3 id="12">1.2 设计理念</h3>
+<ol>
+<li><strong>C 核心，双脚本入口</strong>：引擎核心使用 C11 编写，追求可移植性与可嵌入性。游戏逻辑可用原生 kyx 编写（性能路径），编辑器自动化与工具链脚本使用 Python（便利路径）。</li>
+<li><strong>数据驱动与 ECS</strong>：场景对象采用 ECS（Entity-Component-System）模型，组件为纯数据（POD），系统以批次迭代，配合 archetype 内存布局，充分发挥缓存局部性。</li>
+<li><strong>后端抽象，一次编写多端渲染</strong>：渲染层基于 RHI（Render Hardware Interface）抽象，实现 OpenGL 3.3 Core 与 Vulkan 1.2 两个后端，2D/3D 共用同一套管线描述。</li>
+<li><strong>固定时间步长模拟</strong>：物理与游戏逻辑在固定时间步内模拟，渲染按显示刷新率插值，保证确定性（determinism），便于回放与联机同步。</li>
+<li><strong>确定性优先的物理</strong>：内置刚体物理，半隐式欧拉积分 + 冲量约束求解器，broadphase 用 SAP，narrowphase 用 GJK/EPA 与基本图元碰撞。</li>
+<li><strong>资源即流水线</strong>：所有资源（纹理、网格、着色器、场景）通过统一资源管理器加载，支持异步加载与热重载。</li>
+<li><strong>脚本与引擎双向交互</strong>：kyx 通过注册表调用 C 原生函数；C 亦可将引擎实体句柄安全下放到 kyx，由 kyx 直接驱动游戏逻辑。一切交互经过值封送（marshaling）层，杜绝指针裸露。</li>
+</ol>
+<h3 id="13">1.3 关键决策速览</h3>
+<table>
+<thead>
+<tr>
+<th>决策点</th>
+<th>选择</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>核心语言</td>
+<td>C11</td>
+<td>可移植性、嵌入性、ABI 稳定，避免 C++ ABI 跨平台问题</td>
+</tr>
+<tr>
+<td>渲染后端</td>
+<td>OpenGL 3.3 Core + Vulkan 1.2（RHI 抽象）</td>
+<td>GL 保底全平台，Vulkan 追求高性能，共享上层描述</td>
+</tr>
+<tr>
+<td>脚本语言</td>
+<td>自研 kyx（原生）+ Python（工具）</td>
+<td>游戏逻辑免编译热更、零依赖；Python 服务编辑器生态</td>
+</tr>
+<tr>
+<td>物理引擎</td>
+<td>自研刚体物理</td>
+<td>满足"内置物理引擎"定位，可深度定制与确定性控制</td>
+</tr>
+<tr>
+<td>GUI</td>
+<td>Dear ImGui</td>
+<td>即时模式、零 GC、渲染后端复用现有 RHI，迭代极快</td>
+</tr>
+<tr>
+<td>构建系统</td>
+<td>CMake + FetchContent</td>
+<td>三平台通用，依赖管理内聚</td>
+</tr>
+<tr>
+<td>内存管理</td>
+<td>核心区域内存池 + 脚本 GC</td>
+<td>核心可控，脚本免悬挂指针负担</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2">2. 总体架构与模块划分</h2>
+<h3 id="21">2.1 分层架构</h3>
+<pre><code class="language-mermaid">graph TD
+    A[&quot;App / Tools (Editor, Demos)&quot;]
+    B[&quot;Kronyx Layer (Game Scripts, kyx VM)&quot;]
+    C[&quot;Engine Layer (ECS, Scene, Resource, Physics, Audio)&quot;]
+    D[&quot;RHI + Render Core (GL / Vulkan Backend)&quot;]
+    E[&quot;Platform Layer (Window, Input, FS, Time, Thread)&quot;]
+    A --&gt; B
+    B --&gt; C
+    C --&gt; D
+    D --&gt; E
+</code></pre>
+<h3 id="22">2.2 模块清单</h3>
+<table>
+<thead>
+<tr>
+<th>模块</th>
+<th>路径（建议）</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ky_platform</code></td>
+<td><code>src/platform/</code></td>
+<td>窗口（GLFW）、输入、文件系统、高精度时钟、线程池、动态库加载</td>
+</tr>
+<tr>
+<td><code>ky_core</code></td>
+<td><code>src/core/</code></td>
+<td>数学库（向量/矩阵/四元数）、内存分配器、动态数组/哈希表/字符串、日志、断言</td>
+</tr>
+<tr>
+<td><code>ky_ecs</code></td>
+<td><code>src/ecs/</code></td>
+<td>实体句柄、组件类型注册、archetype 存储、系统调度</td>
+</tr>
+<tr>
+<td><code>ky_scene</code></td>
+<td><code>src/scene/</code></td>
+<td>场景图、层级关系、变换、序列化（二进制+JSON）</td>
+</tr>
+<tr>
+<td><code>ky_resource</code></td>
+<td><code>src/resource/</code></td>
+<td>资源注册、异步加载、引用计数、热重载、资产导入管线</td>
+</tr>
+<tr>
+<td><code>ky_render</code></td>
+<td><code>src/render/</code></td>
+<td>RHI 抽象、场景渲染（2D 批次 / 3D 前向+）、着色器管理、光照阴影</td>
+</tr>
+<tr>
+<td><code>ky_backend_gl</code></td>
+<td><code>src/render/gl/</code></td>
+<td>OpenGL 3.3 Core 后端实现</td>
+</tr>
+<tr>
+<td><code>ky_backend_vk</code></td>
+<td><code>src/render/vk/</code></td>
+<td>Vulkan 1.2 后端实现</td>
+</tr>
+<tr>
+<td><code>ky_physics</code></td>
+<td><code>src/physics/</code></td>
+<td>刚体、碰撞体、broadphase/narrowphase、约束求解、CCD</td>
+</tr>
+<tr>
+<td><code>ky_script</code></td>
+<td><code>src/script/</code></td>
+<td>kyx 词法/语法/编译/VM、值封送、原生函数注册表</td>
+</tr>
+<tr>
+<td><code>ky_python</code></td>
+<td><code>src/python/</code></td>
+<td>基于 CPython C API 的 Python 绑定（工具层）</td>
+</tr>
+<tr>
+<td><code>ky_editor</code></td>
+<td><code>tools/editor/</code></td>
+<td>ImGui 编辑器：视口、层级、属性、控制台、性能面板</td>
+</tr>
+<tr>
+<td><code>ky_audio</code></td>
+<td><code>src/audio/</code></td>
+<td>简化音频播放（miniaudio 封装），后续阶段</td>
+</tr>
+<tr>
+<td><code>tests/</code></td>
+<td><code>tests/</code></td>
+<td>单元测试（core、ecs、render 描述、physics、script）</td>
+</tr>
+<tr>
+<td><code>demos/</code></td>
+<td><code>demos/</code></td>
+<td>示例游戏：2D 平台跳跃、3D 漫游</td>
+</tr>
+</tbody>
+</table>
+<h3 id="23">2.3 模块依赖规则</h3>
+<ul>
+<li><strong>单向依赖</strong>：<code>platform ← core ← ecs/scene/resource ← render/physics/script ← editor/demos</code>。</li>
+<li>上层模块只允许依赖下层与同层，禁止反向依赖。</li>
+<li><code>render</code>、<code>physics</code>、<code>script</code> 之间<strong>不互相依赖</strong>，通过 <code>scene</code> 层的组件与系统解耦（如脚本组件驱动刚体组件，均由系统调度，而非直接调用）。</li>
+</ul>
+<hr />
+<h2 id="3-c">3. 核心类/接口定义（C 面向对象模拟）</h2>
+<p>C 语言没有类，Kronyx 采用 <strong>结构体（数据）+ 函数指针（虚表）+ 前缀命名（方法）</strong> 的约定模拟 OOP。所有跨模块交互均通过不透明指针（opaque handle）完成，头文件只暴露 <code>typedef struct kyXxx kyXxx;</code> 与函数签名。</p>
+<h3 id="31">3.1 对象模型约定</h3>
+<pre><code class="language-c">// 所有可派生对象以 &quot;基底&quot; 开头，派生对象将基底的 vtable 放在结构体首字段
+typedef struct kyObject {
+    const struct kyObjectVtbl *vtbl;  // 虚函数表，首字段保证可向上转型
+    int32_t ref_count;                 // 引用计数（工具层）或 0（无 GC）
+} kyObject;
+
+typedef struct kyObjectVtbl {
+    void (*destroy)(kyObject *self);
+} kyObjectVtbl;
+</code></pre>
+<h3 id="32">3.2 引擎上下文与生命周期</h3>
+<pre><code class="language-c">typedef struct kyEngineConfig {
+    const char *app_name;
+    uint16_t window_width;
+    uint16_t window_height;
+    int vsync;
+    uint8_t log_level;
+    struct {
+        int backend;            // KY_RENDERER_GL 或 KY_RENDERER_VULKAN
+        int width, height;
+    } render;
+    int python_enabled;         // 是否初始化 CPython（仅编辑器/工具构建）
+} kyEngineConfig;
+
+typedef struct kyEngine kyEngine;
+
+KY_API kyEngine *ky_engine_create(const kyEngineConfig *cfg);
+KY_API void       ky_engine_destroy(kyEngine *engine);
+KY_API int        ky_engine_run(kyEngine *engine);          // 阻塞式主循环
+KY_API void       ky_engine_stop(kyEngine *engine);         // 请求退出
+KY_API float      ky_engine_frame_time(const kyEngine *engine);
+KY_API int        ky_engine_is_running(const kyEngine *engine);
+</code></pre>
+<h3 id="33">3.3 数学库</h3>
+<pre><code class="language-c">typedef struct { float x, y; }          kyVec2;
+typedef struct { float x, y, z; }       kyVec3;
+typedef struct { float x, y, z, w; }    kyVec4;
+typedef struct { float x, y, z, w; }    kyQuat;   // 四元数，w 为实部
+typedef struct { float m[16]; }         kyMat4;   // 列主序，与 GLSL/SPIR-V 对齐
+typedef struct { kyVec3 center; float radius; } kySphere;
+typedef struct { kyVec3 min, max; }             kyAABB;
+
+KY_API kyMat4 ky_mat4_identity(void);
+KY_API kyMat4 ky_mat4_translate(kyVec3 t);
+KY_API kyMat4 ky_mat4_rotate(kyQuat q);
+KY_API kyMat4 ky_mat4_perspective(float fovy_rad, float aspect, float zn, float zf);
+KY_API kyMat4 ky_mat4_look_at(kyVec3 eye, kyVec3 center, kyVec3 up);
+KY_API kyMat4 ky_mat4_mul(const kyMat4 *a, const kyMat4 *b);
+</code></pre>
+<h3 id="34-ecs">3.4 ECS 核心接口</h3>
+<pre><code class="language-c">typedef struct kyEntity {
+    uint32_t id;        // 实体槽位索引
+    uint32_t version;   // 世代号，防止悬垂句柄复用
+} kyEntity;
+
+#define KY_NULL_ENTITY ((kyEntity){0, 0})
+
+typedef struct kyComponentType {
+    const char *name;
+    size_t size;                        // 组件字节大小（POD）
+    uint32_t type_id;                   // 注册时分配
+    void (*ctor)(void *comp);
+    void (*dtor)(void *comp);
+    void (*on_add)(kyEntity e, void *comp);     // 可选回调
+} kyComponentType;
+
+typedef struct kySystem {
+    const char *name;
+    uint32_t order;                     // 调度顺序，小者先执行
+    const uint32_t *reads;              // 依赖的组件 type_id 数组
+    const uint32_t *writes;
+    size_t read_count, write_count;
+    void (*update)(struct kyWorld *w, float dt, void *user);
+    void *user;
+} kySystem;
+
+typedef struct kyWorld kyWorld;
+
+KY_API kyWorld *ky_world_create(void);
+KY_API void     ky_world_destroy(kyWorld *w);
+KY_API uint32_t ky_world_register_component(kyWorld *w, const kyComponentType *t);
+KY_API void     ky_world_register_system(kyWorld *w, const kySystem *s);
+KY_API kyEntity ky_world_spawn(kyWorld *w);
+KY_API void     ky_world_despawn(kyWorld *w, kyEntity e);
+KY_API void    *ky_world_add_component(kyWorld *w, kyEntity e, uint32_t type_id);
+KY_API void    *ky_world_get_component(kyWorld *w, kyEntity e, uint32_t type_id);   // 无则 NULL
+KY_API void     ky_world_remove_component(kyWorld *w, kyEntity e, uint32_t type_id);
+KY_API void     ky_world_step(kyWorld *w, float dt);  // 按 order 依次执行已注册系统
+KY_API int      ky_entity_valid(const kyWorld *w, kyEntity e);
+</code></pre>
+<h3 id="35">3.5 资源管理器</h3>
+<pre><code class="language-c">typedef enum kyResourceKind { KY_RES_MESH, KY_RES_TEXTURE, KY_RES_SHADER, KY_RES_MATERIAL, KY_RES_SCENE, KY_RES_AUDIO } kyResourceKind;
+
+typedef struct kyResource {
+    kyResourceKind kind;
+    uint64_t id;                // 哈希后的资源 GUID
+    char path[512];
+    int32_t ref_count;
+    void (*reload)(struct kyResource *r);   // 热重载入口
+} kyResource;
+
+typedef struct kyResourceManager kyResourceManager;
+
+KY_API kyResourceManager *ky_resmgr_create(void);
+KY_API kyResource *ky_resmgr_load(kyResourceManager *m, const char *path);      // 同步加载
+KY_API void       ky_resmgr_load_async(kyResourceManager *m, const char *path, void (*cb)(kyResource*, void*), void *user);
+KY_API void       ky_resmgr_acquire(kyResourceManager *m, kyResource *r);       // +1 引用
+KY_API void       ky_resmgr_release(kyResourceManager *m, kyResource *r);       // -1 引用，归零释放
+KY_API void       ky_resmgr_hot_reload(kyResourceManager *m, const char *path);
+</code></pre>
+<h3 id="36-rhi">3.6 渲染核心接口（RHI 抽象）</h3>
+<pre><code class="language-c">typedef enum kyRendererBackend { KY_RENDERER_NONE = 0, KY_RENDERER_GL, KY_RENDERER_VULKAN } kyRendererBackend;
+typedef enum kyShaderStage  { KY_STAGE_VERTEX = 0, KY_STAGE_FRAGMENT, KY_STAGE_COMPUTE } kyShaderStage;
+typedef enum kyPrimitiveTopology { KY_TRIANGLES, KY_TRIANGLE_STRIP, KY_LINES, KY_POINTS } kyPrimitiveTopology;
+
+typedef struct kyRenderDevice  kyRenderDevice;   // 后端设备（GL context / VkDevice 包装）
+typedef struct kyShader         kyShader;
+typedef struct kyBuffer         kyBuffer;
+typedef struct kyTexture        kyTexture;
+typedef struct kyPipeline       kyPipeline;
+typedef struct kyCommandList    kyCommandList;
+
+typedef struct kyShaderSource {
+    const char *vs;              // GLSL 源码（后端统一以 GLSL 为入口）
+    const char *fs;
+    const char *cs;              // 可选 compute
+    const char *entry;           // 默认 &quot;main&quot;
+} kyShaderSource;
+
+typedef struct kyVertexAttrib { uint32_t location; uint32_t offset; uint32_t size; uint8_t normalized; } kyVertexAttrib;
+typedef struct kyVertexLayout { const kyVertexAttrib *attribs; uint32_t count; uint32_t stride; } kyVertexLayout;
+
+KY_API kyRenderDevice *ky_rd_create(kyRendererBackend backend, void *platform_win);
+KY_API void            ky_rd_destroy(kyRenderDevice *rd);
+KY_API const char     *ky_rd_backend_name(const kyRenderDevice *rd);
+
+KY_API kyShader   *ky_rd_create_shader(kyRenderDevice *rd, const kyShaderSource *src);
+KY_API kyBuffer   *ky_rd_create_buffer(kyRenderDevice *rd, size_t size, const void *data, int dynamic);
+KY_API kyTexture  *ky_rd_create_texture_2d(kyRenderDevice *rd, int w, int h, int channels, const void *pixels);
+KY_API kyPipeline *ky_rd_create_pipeline(kyRenderDevice *rd, const kyPipelineDesc *desc);
+
+KY_API kyCommandList *ky_rd_begin(kyRenderDevice *rd);
+KY_API void           ky_cmd_set_pipeline(kyCommandList *cl, kyPipeline *p);
+KY_API void           ky_cmd_set_const(kyCommandList *cl, int slot, const void *data, size_t bytes);
+KY_API void           ky_cmd_set_vertex_buffer(kyCommandList *cl, kyBuffer *vb, uint32_t stride);
+KY_API void           ky_cmd_set_index_buffer(kyCommandList *cl, kyBuffer *ib, uint32_t index_size);
+KY_API void           ky_cmd_set_texture(kyCommandList *cl, int slot, kyTexture *tex);
+KY_API void           ky_cmd_draw_indexed(kyCommandList *cl, uint32_t index_count, uint32_t instance_count);
+KY_API void           ky_rd_submit(kyRenderDevice *rd, kyCommandList *cl);
+KY_API void           ky_rd_present(kyRenderDevice *rd);
+</code></pre>
+<h3 id="37">3.7 物理引擎接口</h3>
+<pre><code class="language-c">typedef enum kyColliderShape { KY_SHAPE_SPHERE, KY_SHAPE_BOX, KY_SHAPE_CAPSULE, KY_SHAPE_PLANE, KY_SHAPE_CONVEX_MESH, KY_SHAPE_TRI_MESH } kyColliderShape;
+
+typedef struct kyCollider {
+    kyColliderShape shape;
+    union {
+        kySphere sphere;
+        struct { kyVec3 half_extents; } box;
+        struct { float radius, half_height; } capsule;
+        struct { kyVec3 normal; float d; } plane;
+    } u;
+} kyCollider;
+
+typedef struct kyRigidBody {
+    kyVec3   position;
+    kyQuat   rotation;
+    kyVec3   linear_velocity;
+    kyVec3   angular_velocity;
+    float    inv_mass;              // 0 = 静态
+    float    inv_inertia[3];        // 对角线逆惯性张量（局部系）
+    float    restitution;           // 弹性系数 [0,1]
+    float    friction;              // 摩擦系数
+    uint32_t collider_id;           // 关联碰撞体
+    uint32_t flags;                 // 睡眠/激活/CCD 标志
+    void    *user_data;
+} kyRigidBody;
+
+typedef struct kyPhysicsWorld kyPhysicsWorld;
+
+KY_API kyPhysicsWorld *ky_physics_create(kyVec3 gravity);
+KY_API void            ky_physics_destroy(kyPhysicsWorld *pw);
+KY_API uint32_t        ky_physics_add_collider(kyPhysicsWorld *pw, const kyCollider *c);
+KY_API uint32_t        ky_physics_add_body(kyPhysicsWorld *pw, const kyRigidBody *b);
+KY_API void            ky_physics_set_gravity(kyPhysicsWorld *pw, kyVec3 g);
+KY_API void            ky_physics_step(kyPhysicsWorld *pw, float dt);          // 固定步长调用
+KY_API void            ky_physics_apply_impulse(kyPhysicsWorld *pw, uint32_t body, kyVec3 impulse, kyVec3 at);
+KY_API void            ky_physics_get_body(kyPhysicsWorld *pw, uint32_t body, kyRigidBody *out);
+KY_API void            ky_physics_cast_ray(kyPhysicsWorld *pw, kyVec3 origin, kyVec3 dir, float max_t, kyRayHit *out_hit);
+</code></pre>
+<h3 id="38-c">3.8 脚本引擎接口（C 侧）</h3>
+<pre><code class="language-c">typedef enum kyValueType { KY_NIL, KY_BOOL, KY_INT, KY_FLOAT, KY_STRING, KY_FUNCTION, KY_CLASS, KY_INSTANCE, KY_NATIVE, KY_ARRAY } kyValueType;
+
+typedef struct kyValue {
+    kyValueType type;
+    union {
+        int    b;
+        int64_t i;
+        double f;
+        const char *s;      // 指向 VM 内字符串（GC 管理）
+        struct kyFunction *fn;
+        struct kyInstance *inst;
+        void *native;       // 原生句柄（封装指针 + 释放器）
+    } as;
+} kyValue;
+
+typedef struct kyVM kyVM;
+typedef kyValue (*kyNativeFn)(kyVM *vm, kyValue *args, int argc, void *user);
+
+KY_API kyVM   *ky_vm_create(const struct kyVMCreateInfo *info);   // 含 import 搜索路径配置
+KY_API void    ky_vm_destroy(kyVM *vm);
+KY_API int     ky_vm_load_string(kyVM *vm, const char *src, const char *name);   // 编译+执行，0 成功
+KY_API int     ky_vm_load_file(kyVM *vm, const char *path);
+KY_API int     ky_vm_call(kyVM *vm, const char *func_name, kyValue *args, int argc, kyValue *ret);
+KY_API void    ky_vm_register_native(kyVM *vm, const char *ns, const char *name, kyNativeFn fn, void *user);
+KY_API const char *ky_vm_last_error(kyVM *vm);   // 含行号与堆栈的格式化错误
+KY_API void    ky_vm_set_import_root(kyVM *vm, const char *dir);   // local 导入的根路径
+</code></pre>
+<h3 id="39">3.9 编辑器/工具层公共接口</h3>
+<pre><code class="language-c">typedef struct kyEditorHooks {
+    void (*draw_viewport)(void);        // 由 RHI 渲染场景到 FBO
+    void (*on_select)(kyEntity e);
+    void (*on_property_changed)(kyEntity e, const char *comp, const char *field);
+    void (*log)(int level, const char *msg);
+} kyEditorHooks;
+
+void ky_editor_run(kyEngine *engine, const kyEditorHooks *hooks);
+</code></pre>
+<hr />
+<h2 id="4">4. 核心运行时</h2>
+<h3 id="41">4.1 引擎主循环</h3>
+<p>采用<strong>固定时间步长 + 渲染插值</strong>模型。<code>ky_engine_run</code> 内部结构如下：</p>
+<pre><code class="language-c">static int run_loop(kyEngine *e) {
+    const float fixed_dt = 1.0f / 60.0f;
+    float accumulator = 0.0f;
+    while (ky_engine_is_running(e)) {
+        double now  = ky_time_now();
+        double frame = now - e-&gt;last_frame;
+        e-&gt;last_frame = now;
+        accumulator = fminf(accumulator + (float)frame, 0.25f);   // 防螺旋死亡
+
+        ky_platform_poll_events(e-&gt;window);
+        while (accumulator &gt;= fixed_dt) {
+            ky_script_on_fixed_update(e-&gt;vm, fixed_dt);   // kyx 固定更新（先）
+            ky_ecs_step(e-&gt;world, fixed_dt);              // 系统调度（物理系统在列）
+            accumulator -= fixed_dt;
+        }
+        const float alpha = accumulator / fixed_dt;       // 插值因子
+
+        ky_render_scene(e-&gt;rd, e-&gt;scene, alpha);          // 渲染（帧率独立）
+        ky_render_present(e-&gt;rd);
+    }
+    return 0;
+}
+</code></pre>
+<p>设计理由：
+- 固定步长保证物理与 kyx 逻辑<strong>确定性</strong>，回放/断点调试可复现。
+- <code>accumulator</code> 封顶 250ms，避免长时间卡顿后的"死亡螺旋"。
+- alpha 插值用于刚体位置在渲染时的平滑，仅在渲染层使用，不污染模拟状态。</p>
+<h3 id="42-ecs">4.2 ECS 实现方案</h3>
+<p>采用 <strong>Archetype（原型）+ Sparse Set</strong> 存储：</p>
+<pre><code class="language-c">typedef struct kyArchetype {
+    uint32_t *component_types;     // 升序 type_id 数组
+    size_t     component_count;
+    size_t     entity_count;
+    size_t     capacity;
+    struct {
+        uint8_t *data;             // 该列的组件数组
+        uint32_t type_id;
+        size_t   stride;
+    } *columns;
+    uint32_t *entity_ids;          // 实体 id 映射（sparse 用）
+} kyArchetype;
+</code></pre>
+<ul>
+<li>每个组件集（如 <code>{Transform, RigidBody}</code>、<code>{Transform, Sprite}</code>）对应一个 archetype，组件按列连续存储，系统迭代时对列做顺序扫描，命中缓存。</li>
+<li>实体 id 使用 sparse-set 映射到 archetype 槽位；销毁时以 swap-remove 保持紧凑。</li>
+<li>组件增删会触发实体在 archetype 之间迁移；迁移频率低（运行时很少改变组件集），代价可接受。</li>
+<li>查询接口 <code>ky_world_view(w, types[], n)</code> 返回只读迭代器，供系统使用。</li>
+</ul>
+<h3 id="43">4.3 场景管理</h3>
+<ul>
+<li>场景 = 实体 + 组件 + 资源引用 + 场景元数据（光照、环境、脚本挂载点）。</li>
+<li>场景序列化采用<strong>自定义二进制格式（.kyscene）+ 可选 JSON</strong>：二进制用于运行时快速加载，JSON 用于编辑器 diff/手改。</li>
+<li>场景中的 kyx 脚本以 <code>ScriptSource</code> 组件引用，运行时由脚本系统编译为字节码并缓存。</li>
+</ul>
+<h3 id="44">4.4 资源加载与热重载</h3>
+<ul>
+<li>所有资源统一 <code>kyResource</code> 头 + 引用计数。</li>
+<li>异步加载：后台线程解析文件 → 主线程创建 GPU 资源，通过任务队列回传完成回调。</li>
+<li>热重载：文件系统监视器（简单轮询或 inotify/ReadDirectoryChangesW）检测到着色器/脚本/纹理变更时，触发 <code>reload</code> 回调并失效缓存；编辑器下默认开启。</li>
+</ul>
+<hr />
+<h2 id="5">5. 图形渲染模块</h2>
+<h3 id="51-rhi">5.1 RHI 与后端选型</h3>
+<ul>
+<li>上层渲染器只面向 <code>kyRenderDevice</code>/<code>kyCommandList</code> 抽象。</li>
+<li><strong>OpenGL 3.3 Core</strong>：跨平台保底，桌面全覆盖，调试便利。</li>
+<li><strong>Vulkan 1.2</strong>：高性能路径，支持显式资源管理与多线程命令录制。</li>
+<li>着色器以 <strong>GLSL 为源语言</strong>：GL 后端直接编译；Vulkan 后端经 <code>glslangValidator</code> 交叉编译为 SPIR-V（构建期或运行时缓存）。</li>
+</ul>
+<h3 id="52">5.2 渲染流程（帧）</h3>
+<pre><code class="language-mermaid">graph TD
+    A[&quot;Frame Start: Acquire Presentable&quot;]
+    B[&quot;Scene Culling (Frustum + Occlusion)&quot;]
+    C[&quot;3D Opaque Pass&quot;]
+    D[&quot;Shadow Pass (CSM)&quot;]
+    E[&quot;2D Sprite Batch Pass&quot;]
+    F[&quot;Post FX (Tonemap, Vignette)&quot;]
+    G[&quot;ImGui Overlay&quot;]
+    H[&quot;Submit + Present&quot;]
+    A --&gt; B --&gt; C --&gt; D --&gt; E --&gt; F --&gt; G --&gt; H
+</code></pre>
+<h3 id="53-2d">5.3 2D 渲染</h3>
+<ul>
+<li><strong>批次化</strong>：所有 2D 精灵、图集、文本合并进一个动态顶点缓冲（Streaming VB），按纹理排序后单次 DrawCall。</li>
+<li>每帧 1~3 个 DrawCall 渲染全场景精灵，适合横版平台跳跃类游戏。</li>
+<li>2D 相机 = 正交投影矩阵 + 变换。</li>
+</ul>
+<h3 id="54-3d">5.4 3D 渲染</h3>
+<ul>
+<li>采用<strong>前向渲染 + Forward+ 光加速</strong>（首版简化：单灯光直射 + 最多 8 点光，直接 UB 传递）。</li>
+<li>管线：顶点输入 → 材质（BaseColor/Normal/Metallic-Roughness）→ 环境光（IBL 简化版）→ 方向光阴影。</li>
+<li>阴影：方向光使用 <strong>CSM（Cascaded Shadow Map）</strong>，2~3 级级联，PCF 4-tap 软阴影；点光可选 6 面 cubemap 阴影（后期）。</li>
+</ul>
+<h3 id="55">5.5 着色器管理</h3>
+<pre><code class="language-c">typedef struct kyShaderUniformDesc {
+    const char *name;
+    uint32_t    stage;
+    uint32_t    binding;    // UB slot 或 descriptor binding
+    size_t      size;
+} kyShaderUniformDesc;
+
+typedef struct kyPipelineDesc {
+    kyShader            *shader;
+    kyVertexLayout       layout;
+    kyPrimitiveTopology  topology;
+    int depth_test, depth_write, cull_mode;
+    struct { int on; kyVec4 color; } blend;
+} kyPipelineDesc;
+</code></pre>
+<ul>
+<li>着色器编译产物缓存至 <code>cache/shaders/&lt;hash&gt;.spv</code>（Vulkan）或缓存二进制（GL，可选）。</li>
+<li>材质 = <code>kyMaterial { kyPipeline*, kyShaderParams, kyTexture* slots[8] }</code>。</li>
+</ul>
+<h3 id="56">5.6 网格与纹理</h3>
+<pre><code class="language-c">typedef struct kyMeshData {
+    kyBuffer *vb, *ib;
+    uint32_t vertex_count, index_count;
+    kyVertexLayout layout;
+    kyAABB bounds;           // 供剔除使用
+} kyMeshData;
+</code></pre>
+<ul>
+<li>顶点格式：位置(float3)、法线(float3)、切线(float4)、UV(float2)、顶点色(float4)，interleave 存储。</li>
+<li>纹理管线：stb_image 解码 → GPU 上传；支持 sRGB 采样、mipmap 生成、压缩格式（BC/ASTC 视平台，首版不做）。</li>
+</ul>
+<hr />
+<h2 id="6">6. 物理引擎</h2>
+<h3 id="61">6.1 总体设计</h3>
+<p>内置自研物理引擎，面向"确定性、简单、够用"原则，覆盖 2D/3D 刚体需求。不做布料/流体（预留扩展接口）。</p>
+<h3 id="62">6.2 管线（每固定步）</h3>
+<ol>
+<li><strong>积分</strong>：半隐式欧拉，先更新速度（含重力），再更新位置。
+   <code>v += g * dt + invM * F_ext * dt
+   x += v * dt
+   ω += I_inv * (τ - ω × I·ω) * dt
+   q += 0.5 * ω_q * q * dt  （四元数导数），随后归一化</code></li>
+<li><strong>Broadphase</strong>：SAP（Sweep and Prune）按 AABB 三个轴排序扫描，输出候选对。</li>
+<li><strong>Narrowphase</strong>：按碰撞体形状分派——球-球、球-箱、箱-箱走 SAT；凸体通用走 <strong>GJK 求碰撞 + EPA 求穿透</strong>；三角网格走 Minkowski 边界采样（简化）。</li>
+<li><strong>碰撞响应</strong>：冲量法。对每对碰撞求法向冲量 <code>j</code>，满足动量守恒与恢复系数：
+   <code>j = -(1+e) * v_rel·n / (invM_a + invM_b + (r_a×n)²·I_a⁻¹ + (r_b×n)²·I_b⁻¹)</code>
+   摩擦用 Coulamb 近似：切向冲量 <code>j_t = -min(|j_t_ideal|, μ*|j_n|)</code>。</li>
+<li><strong>约束求解</strong>：迭代 8~12 次求解接触约束（Projected Gauss-Seidel），保证堆叠稳定。</li>
+<li><strong>睡眠管理</strong>：线/角速度低于阈值持续若干帧 → 标记睡眠，参与但跳过积分与求解（岛级休眠，按连通分量划分）。</li>
+<li><strong>CCD</strong>：对速度超阈值的刚体做连续碰撞检测（扫掠球 vs 场景），防止隧穿。</li>
+</ol>
+<h3 id="63">6.3 关键算法选型</h3>
+<table>
+<thead>
+<tr>
+<th>需求</th>
+<th>算法</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>宽相</td>
+<td>SAP</td>
+<td>实现简单、缓存友好、场景规模（&lt;5k 物体）足够</td>
+</tr>
+<tr>
+<td>凸体窄相</td>
+<td>GJK + EPA</td>
+<td>通用性强，支持任意凸体，数值稳定</td>
+</tr>
+<tr>
+<td>堆叠稳定</td>
+<td>PGS 迭代求解</td>
+<td>简单可控，确定性好</td>
+</tr>
+<tr>
+<td>快速物体</td>
+<td>扫掠 CCD</td>
+<td>仅对高速体启用，成本可控</td>
+</tr>
+<tr>
+<td>重力</td>
+<td>用户配置 <code>kyVec3</code></td>
+<td>支持 2D 模式（Z 轴锁死 + 平面引力）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="64-2d">6.4 2D 模式</h3>
+<ul>
+<li>通过约束：锁定 Z 轴线速度与角速度（限制刚体自由度）。</li>
+<li>碰撞体使用 2D 图元（圆、矩形），复用同一套求解器，仅降维。</li>
+</ul>
+<hr />
+<h2 id="7">7. 脚本系统概览</h2>
+<h3 id="71">7.1 体系结构</h3>
+<pre><code class="language-mermaid">graph TD
+    A[&quot;kyx Source (.nus)&quot;]
+    B[&quot;Preprocessor: strip forced comments&quot;]
+    C[&quot;Lexer -&gt; Token Stream&quot;]
+    D[&quot;Parser (Recursive Descent) -&gt; AST&quot;]
+    E[&quot;Semantic/Module Resolver (use/namespace)&quot;]
+    F[&quot;Compiler -&gt; Bytecode&quot;]
+    G[&quot;KyxVM (Register-based)&quot;]
+    H[&quot;Native Function Registry&quot;]
+    I[&quot;C Engine Core (ECS/Physics/Render)&quot;]
+    J[&quot;Python Bindings (Editor/Tools)&quot;]
+    A --&gt; B --&gt; C --&gt; D --&gt; E --&gt; F --&gt; G
+    G --&gt; H
+    H --&gt; I
+    G --&gt; I
+    J --&gt; I
+</code></pre>
+<h3 id="72">7.2 脚本挂载模型</h3>
+<ul>
+<li>游戏对象通过 <code>ScriptSource</code> 组件绑定 kyx 源文件；系统 <code>ScriptSystem</code> 每固定步调用约定入口（<code>on_fixed_update</code>、<code>on_begin</code>、<code>on_end</code>）。</li>
+<li>kyx 通过句柄 API 与 ECS 交互：<code>world.spawn()</code>, <code>entity.add_comp(type, args)</code>, <code>entity.get("rigidbody").linear_velocity = ...</code>。</li>
+<li>原生函数注册表以 <code>namespace.funcname</code> 为键；kyx 侧 <code>use builtin "engine"</code> 获得整套引擎 API。</li>
+</ul>
+<h3 id="73-python">7.3 与 Python 的关系</h3>
+<ul>
+<li>kyx：<strong>运行时游戏逻辑</strong>，性能敏感路径。</li>
+<li>Python：<strong>编辑器脚本/工具链/资产管线</strong>，经 CPython C API 绑定（见第 9 节）。</li>
+<li>两者不混用：游戏运行时默认不启用 Python（<code>python_enabled=0</code>），保证部署产物无解释器依赖。</li>
+</ul>
+<hr />
+<h2 id="8-kronyx">8. Kronyx 脚本语言规范与实现</h2>
+<h3 id="81">8.1 语言设计目标</h3>
+<ol>
+<li>类 Java 的控制流，C/C++ 程序员零学习成本。</li>
+<li><strong>强制注释</strong>机制支持在任意位置插入标记，形成"可注入"的宏/注解变体。</li>
+<li>显式模块系统（<code>use</code> + 命名空间），自带命名冲突自动重命名与警告。</li>
+<li>动态类型 + 面向对象（单继承、方法分派），适合游戏逻辑快速迭代。</li>
+<li>编译到自定义寄存器虚拟机字节码，执行效率接近 Lua 5.4 量级。</li>
+</ol>
+<h3 id="82">8.2 词法规范</h3>
+<h4 id="821">8.2.1 字符集与空白</h4>
+<ul>
+<li>源文件 UTF-8；标识符支持 ASCII 字母、数字、下划线（<code>[A-Za-z_][A-Za-z0-9_]*</code>），首字符非数字。</li>
+<li>空白：空格 <code></code>、制表符 <code>\t</code>、回车 <code>\r</code>、换行 <code>\n</code> 均视为空白，换行不参与语句终结（类 Java，语句以 <code>;</code> 或 <code>}</code> 终结）。</li>
+</ul>
+<h4 id="822">8.2.2 注释（三级）</h4>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>写法</th>
+<th>语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>行注释</td>
+<td><code>// ...</code> 至行尾</td>
+<td>常规</td>
+</tr>
+<tr>
+<td>块注释</td>
+<td><code>/* ... */</code></td>
+<td>常规，可跨行</td>
+</tr>
+<tr>
+<td><strong>强制注释</strong></td>
+<td><code>[/*&lt;!--{任意文本}--&gt;*/]</code></td>
+<td>预处理阶段整体剥离，不可换行（行尾 <code>\</code> 可续行），出现在任何位置均被忽略</td>
+</tr>
+</tbody>
+</table>
+<h4 id="823">8.2.3 强制注释的预处理规则（关键实现）</h4>
+<ul>
+<li>预处理在<strong>词法分析之前</strong>、对<strong>原始文本</strong>执行：线性扫描源文本，一旦命中精确起始序列 <code>[/*&lt;!--</code>，则进入"强制注释剥离态"，持续读取直到命中精确结束序列 <code>--&gt;*/]</code>。</li>
+<li>在剥离态内，若遇到换行且该行最后一个字符<strong>不是</strong> <code>\</code>（续行符），抛出词法错误（<code>unterminated forced comment</code>）。若最后一个字符是 <code>\</code>，则删除 <code>\</code> 并继续到下一行（续行合并）。</li>
+<li>因为剥离发生在字符串与普通注释解析之前，所以它<strong>可以在字符串字面量内部、关键字中间、运算符之间</strong>生效：</li>
+<li><code>i[/*&lt;!--{c}--&gt;*/]f(){}</code> → 剥离后 <code>if(){}</code> ✓</li>
+<li><code>console.log("tes[/*&lt;!--{c}--&gt;*/]t")</code> → 剥离后 <code>"test"</code> ✓</li>
+<li><code>a[/*&lt;!--{c}--&gt;*/]+[/*&lt;!--{c}--&gt;*/]b</code> → <code>a+b</code> ✓</li>
+<li>边界说明：由于是文本级剥离，写在普通 <code>//</code> 或 <code>/* */</code> 注释内部的强制注释片段同样会被剥离（不影响语义，因为所在行已是注释）；应避免在普通块注释内写未闭合的强制注释序列，否则会触发续行错误——此乃文档约定而非缺陷。</li>
+</ul>
+<p>预处理后的产物进入标准词法阶段。</p>
+<h4 id="824">8.2.4 关键字</h4>
+<pre><code>use namespace if else while for break continue return
+function fun class var let const true false nil self super new
+this import export
+</code></pre>
+<p>保留字不可作标识符。</p>
+<h4 id="825">8.2.5 运算符与定界符</h4>
+<pre><code>算术:    + - * / % ++ -- 
+比较:    == != &lt; &lt;= &gt; &gt;=
+逻辑:    &amp;&amp; || !
+位运算:  &amp; | ^ ~ &lt;&lt; &gt;&gt;
+赋值:    = += -= *= /= %= 
+定界符:  ( ) { } [ ] . , ; :
+</code></pre>
+<h4 id="826">8.2.6 字面量</h4>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>示例</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>整数</td>
+<td><code>42</code> <code>-7</code> <code>0xFF</code> <code>0b1010</code></td>
+<td>64 位有符号；支持十六进制、二进制</td>
+</tr>
+<tr>
+<td>浮点</td>
+<td><code>3.14</code> <code>1e-3</code> <code>.5</code></td>
+<td>IEEE754 double</td>
+</tr>
+<tr>
+<td>字符串</td>
+<td><code>"hello"</code> <code>"a\"b"</code></td>
+<td>转义 <code>\n \t \\ \" \u{XXXX}</code>；<strong>强制注释可在字符串内部被剥离</strong></td>
+</tr>
+<tr>
+<td>布尔</td>
+<td><code>true</code> <code>false</code></td>
+<td></td>
+</tr>
+<tr>
+<td>空值</td>
+<td><code>nil</code></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h3 id="83-ebnf">8.3 语法规范（EBNF 摘要）</h3>
+<pre><code>Program        ::= UseDecl* (VarDecl | FuncDecl | ClassDecl | Stmt)*
+UseDecl        ::= 'use' Scope String [ 'namespace' Ident ] ';'
+Scope          ::= 'external' | 'builtin' | 'local'
+
+VarDecl        ::= ('var' | 'let' | 'const') Ident [ '=' Expr ] ';'
+FuncDecl       ::= 'function' Ident '(' ParamList? ')' Block
+ClassDecl      ::= 'class' Ident [ 'extends' Ident ] '{' ClassMember* '}'
+ClassMember    ::= (VarDecl | FuncDecl)
+
+Block          ::= '{' Stmt* '}'
+Stmt           ::= VarDecl | IfStmt | WhileStmt | ForStmt
+                 | ReturnStmt | BreakStmt | ContinueStmt | ExprStmt
+IfStmt         ::= 'if' '(' Expr ')' Block [ 'else' (Block | IfStmt) ]
+WhileStmt      ::= 'while' '(' Expr ')' Block
+ForStmt        ::= 'for' '(' [VarDecl] ';' [Expr] ';' [Expr] ')' Block
+ReturnStmt     ::= 'return' [Expr] ';'
+ExprStmt       ::= Expr ';'
+
+Expr           ::= AssignExpr
+AssignExpr     ::= CondExpr (('=' | '+=' | '-=' | '*=' | '/=' | '%=') AssignExpr)?
+CondExpr       ::= OrExpr [ '?' Expr ':' CondExpr ]
+OrExpr         ::= AndExpr ('||' AndExpr)*
+AndExpr        ::= BitOrExpr ('&amp;&amp;' BitOrExpr)*
+BitOrExpr      ::= BitXorExpr ('|' BitXorExpr)*
+BitXorExpr     ::= BitAndExpr ('^' BitAndExpr)*
+BitAndExpr     ::= EqualityExpr ('&amp;' EqualityExpr)*
+EqualityExpr   ::= RelExpr (('==' | '!=') RelExpr)*
+RelExpr        ::= ShiftExpr (('&lt;' | '&lt;=' | '&gt;' | '&gt;=') ShiftExpr)*
+ShiftExpr      ::= AddExpr (('&lt;&lt;' | '&gt;&gt;') AddExpr)*
+AddExpr        ::= MulExpr (('+' | '-') MulExpr)*
+MulExpr        ::= UnaryExpr (('*' | '/' | '%') UnaryExpr)*
+UnaryExpr      ::= ('!' | '-' | '~' | '++' | '--') UnaryExpr | PostfixExpr
+PostfixExpr    ::= Primary ('.' Ident | '[' Expr ']' | '(' Args? ')' | '++' | '--')*
+Primary        ::= Literal | Ident | '(' Expr ')'
+                 | 'function' '(' ParamList? ')' Block          # 匿名函数/闭包
+                 | 'new' Ident '(' Args? ')'
+Args           ::= Expr (',' Expr)*
+ParamList      ::= Ident (',' Ident)*
+</code></pre>
+<h3 id="84-use">8.4 模块系统（<code>use</code> 语句）</h3>
+<h4 id="841">8.4.1 语法</h4>
+<pre><code>use &lt;scope&gt; &quot;&lt;path&gt;&quot; [namespace &lt;name&gt;];
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>scope</th>
+<th>path 语义</th>
+<th>默认命名空间</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>external</code></td>
+<td><code>"libname:path/to/xxx.nus"</code>，<code>libname</code> 为库标识</td>
+<td><code>libname</code>（冒号前部分）</td>
+</tr>
+<tr>
+<td><code>builtin</code></td>
+<td>内置模块名，如 <code>"stdio"</code>、<code>"engine"</code>、<code>"math"</code></td>
+<td>模块名</td>
+</tr>
+<tr>
+<td><code>local</code></td>
+<td>相对当前文件目录（或 import root）的相对路径</td>
+<td>文件名（不含目录与扩展名）</td>
+</tr>
+</tbody>
+</table>
+<h4 id="842">8.4.2 命名冲突处理（编译器行为）</h4>
+<ul>
+<li>编译器维护一张<strong>命名空间符号表</strong> <code>ns_table: map&lt;ns_name, module_id&gt;</code>。</li>
+<li>处理每个 <code>use</code> 时：</li>
+<li>解析 path → 定位源码文件 → 编译为独立模块单元（独立作用域）。</li>
+<li>计算目标命名空间名（显式 <code>namespace</code> 优先，否则按上表默认）。</li>
+<li>若该命名空间已被占用，则对<strong>后导入者</strong>自动添加前缀 <code>p_</code>（<code>p_another</code>、<code>p_another_1</code> 递推），并在编译输出（stderr / 编辑器控制台）发出警告：
+     <code>warning: namespace 'utils' already in use by module '&lt;other&gt;'; renamed to 'p_utils'</code></li>
+<li>编译<strong>继续</strong>，不中断（与规范"命名冲突时警告，但编译继续"一致）。</li>
+<li>多个文件互相 <code>use</code> 的循环依赖：检测 SCC，引用循环时发出错误（<code>circular import detected</code>）。</li>
+</ul>
+<h4 id="843">8.4.3 模块解析与缓存</h4>
+<ul>
+<li>外部库搜索路径：<code>KYX_IMPORT_PATH</code> 环境变量（<code>:</code>/<code>;</code> 分隔）+ VM 配置的 <code>import_roots[]</code>。</li>
+<li>已编译模块按 (scope,path) 哈希缓存于 VM，重复 <code>use</code> 不重复编译。</li>
+</ul>
+<h3 id="85">8.5 类型系统</h3>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nil</code></td>
+<td>空值</td>
+</tr>
+<tr>
+<td><code>bool</code></td>
+<td>true/false</td>
+</tr>
+<tr>
+<td><code>int</code></td>
+<td>64 位有符号整数</td>
+</tr>
+<tr>
+<td><code>float</code></td>
+<td>双精度浮点</td>
+</tr>
+<tr>
+<td><code>string</code></td>
+<td>不可变字节串，UTF-8</td>
+</tr>
+<tr>
+<td><code>array</code></td>
+<td>动态数组，<code>a[i]</code>、<code>a.push(x)</code></td>
+</tr>
+<tr>
+<td><code>function</code></td>
+<td>一等公民，支持闭包（upvalue）</td>
+</tr>
+<tr>
+<td><code>class</code></td>
+<td>单继承；字段 + 方法</td>
+</tr>
+<tr>
+<td><code>instance</code></td>
+<td>类实例；<code>self</code> 访问自身</td>
+</tr>
+<tr>
+<td><code>native</code></td>
+<td>不透明原生句柄（引擎对象封装）</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>弱类型：运算符按运行期类型分派；<code>int</code>+<code>float</code> 自动提升为 <code>float</code>；<code>nil</code> 参与比较返回 <code>false</code> 或抛运行期错误（取决于操作）。</li>
+<li>内置方法示例（模块 <code>engine</code>）：<code>engine.world</code>, <code>engine.entity_comp</code>, <code>engine.math_...</code>。</li>
+</ul>
+<h3 id="86">8.6 编译器实现</h3>
+<h4 id="861-lexer">8.6.1 词法分析器（Lexer）</h4>
+<ul>
+<li>单遍扫描，输出 <code>kyToken { kyTokenKind kind; const char *start; size_t len; int line; int col; }</code>。</li>
+<li>强制注释已在预处理阶段剥离，词法器不感知。</li>
+<li>最大吃入（maximal munch）原则：<code>&gt;&gt;=</code> 整体为一个 token 而非 <code>&gt;&gt;</code>+<code>=</code>。</li>
+</ul>
+<h4 id="862-parser">8.6.2 语法分析器（Parser）</h4>
+<ul>
+<li><strong>递归下降 + 优先级爬升（precedence climbing）</strong>处理表达式，文法见 8.3。</li>
+<li>直接生成 <strong>AST</strong>（<code>kyAstNode</code> 变体联合体），随后交由语义分析。</li>
+</ul>
+<h4 id="863">8.6.3 语义分析与模块解析</h4>
+<ul>
+<li>建符号表、解析 <code>use</code> 命名空间、检测未定义变量/函数。</li>
+<li>方法解析：<code>a.b(...)</code> → 若 <code>a</code> 为已知类实例，直接绑定类方法（快路径）；否则编译为运行期查找（动态分派）。</li>
+<li>产出"命名空间解析完成"的 AST。</li>
+</ul>
+<h4 id="864-compiler">8.6.4 字节码生成（Compiler）</h4>
+<ul>
+<li>遍历 AST 生成指令序列，表达式编译为<strong>栈式求值 → 寄存器分配</strong>：首版采用简单线性分配（Lua 5.3 风格的固定寄存器窗口 + 临时上溢栈）。</li>
+<li>常量表（int/float/string 去重）、函数原型表、字符串池。</li>
+</ul>
+<h4 id="865-kyvm">8.6.5 指令集设计（KyVM 字节码）</h4>
+<p>寄存器虚拟机，每条指令 32 位定长（op 8bit + A 8bit + B 8bit + C 8bit，小参数嵌入；大参数走常量索引）。</p>
+<pre><code class="language-text">-- 核心指令表（节选）
+OP_LOADCONST   A B        -- R[A] := Constants[B]
+OP_LOADNIL     A          -- R[A] := nil
+OP_LOADBOOL    A B        -- R[A] := B
+OP_LOADINT     A B        -- R[A] := small int B（内嵌）
+OP_MOVE        A B        -- R[A] := R[B]
+OP_ADD/SUB/MUL/DIV/MOD   A B C
+OP_NEG/BNOT/NOT A B
+OP_EQ/NE/LT/LE/GT/GE    A B C        -- R[A] := R[B] op R[C]
+OP_AND/OR      A B C
+OP_CONCAT      A B C
+OP_NEWARRAY    A B        -- R[A] := array, size B
+OP_GETFIELD    A B C      -- R[A] := R[B].field C（C=字段名常量索引）
+OP_SETFIELD    A B C
+OP_GETINDEX    A B C
+OP_SETINDEX    A B C
+OP_GETGLOBAL   A B        -- R[A] := Globals[B]
+OP_SETGLOBAL   A B
+OP_GETUPVAL    A B        -- 闭包捕获
+OP_SETUPVAL    A B
+OP_CLOSURE     A B        -- R[A] := closure(Protos[B], upvals)
+OP_CALL        A B C      -- 调用 R[A]，参数 B 个，返回 C 个
+OP_TAILCALL    A B
+OP_RETURN      A B        -- 返回 R[A..A+B]
+OP_JUMP        sBx        -- 相对跳转（24 位有符号）
+OP_JMPIF/OP_JMPIFNOT  A sBx
+OP_NEWCLASS    A B C      -- R[A] := class(Protos[B], parent C)
+OP_INVOKE      A B C      -- 方法调用（快速路径：R[A].method C）
+OP_NATIVECALL  A B C      -- 原生调用：注册表 id C，参数 B，结果 R[A]
+OP_HALT
+</code></pre>
+<p>编译小示例（<code>if (x &gt; 0) { return x * 2; }</code>）：</p>
+<pre><code class="language-text">      LOADGLOBAL R0, x            ; 全局 x
+      LOADINT   R1, 0
+      GT        R2, R0, R1
+      JMPIFNOT  R2, -&gt;L_END
+      LOADGLOBAL R3, x
+      LOADINT   R4, 2
+      MUL       R5, R3, R4
+      RETURN    R5, 1
+L_END:
+      ...
+</code></pre>
+<h3 id="87">8.7 虚拟机实现</h3>
+<h4 id="871">8.7.1 运行时结构</h4>
+<pre><code class="language-c">typedef struct kyVM {
+    kyValue      *stack;             // 值栈（寄存器 + 表达式栈）
+    uint32_t      stack_capacity;
+    struct kyProto *protos;          // 函数原型表
+    struct kyModule **modules;       // 已加载模块
+    struct kyNSymbol *globals;       // 全局符号表（哈希）
+    struct kyString *strings;        // 字符串池（内部化）
+    struct kyGC   *gc;               // 垃圾回收器
+    struct kyNativeReg **natives;    // 原生函数注册表
+    kyValue      *open_upvalues;     // 闭包 upvalue 链
+    struct kyCallFrame *frames;      // 调用栈帧
+    kyError      *last_error;
+} kyVM;
+
+typedef struct kyCallFrame {
+    const uint8_t *pc;
+    kyValue *base;                   // 寄存器窗口基址
+    struct kyClosure *closure;
+} kyCallFrame;
+</code></pre>
+<h4 id="872">8.7.2 执行循环</h4>
+<ul>
+<li>主循环 <code>fetch → decode → dispatch</code>，用 C <code>switch</code> 或 computed goto（<code>&amp;&amp;label</code> 跳转表）实现，后者可提速 ~15%，作为编译期开关 <code>KYX_OPT_COMPUTED_GOTO</code>。</li>
+<li>方法调用快路径 <code>OP_INVOKE</code>：当目标字段为函数且类匹配时，直接压帧，省去字段读取+回调两次分派。</li>
+<li>数值计算直接基于原生 int64/double，无装箱。</li>
+</ul>
+<h4 id="873">8.7.3 垃圾回收</h4>
+<ul>
+<li><strong>分代式 Mark-Sweep</strong>（老生代）+ <strong>复制式 Scavenger</strong>（新生代），理由：游戏逻辑高频创建临时对象，分代回收吞吐优于朴素 mark-sweep。</li>
+<li>根集合：值栈、调用帧、全局表、upvalue 链、注册表（native 句柄注册表按强/弱分类，弱引用避免循环保持引擎对象）。</li>
+<li><code>native</code> 句柄封装 <code>void *ptr + void (*dtor)(void*) + int is_weak</code>，由 C 侧登记，GC 在对象死亡时调用 dtor（等价于 C# <code>IDisposable</code> 的语义）。</li>
+</ul>
+<h4 id="874">8.7.4 错误处理</h4>
+<ul>
+<li>运行期错误：栈展开（unwind）时逐帧打印调用栈（含函数名+行号），构造 <code>kyError { message, trace[] }</code>。</li>
+<li><code>kyx</code> 侧提供 <code>try { } catch (e) { }</code>（语法扩展，纳入 8.3 的 <code>TryStmt</code>，首版可选实现）。</li>
+<li>C 侧以 <code>ky_vm_last_error()</code> 获取格式化错误。</li>
+</ul>
+<h3 id="88-c">8.8 与 C 核心的交互接口</h3>
+<h4 id="881">8.8.1 值封送规则</h4>
+<table>
+<thead>
+<tr>
+<th>C 类型</th>
+<th>kyx 值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>int64_t</code></td>
+<td><code>KY_INT</code></td>
+<td>直接装箱</td>
+</tr>
+<tr>
+<td><code>double</code></td>
+<td><code>KY_FLOAT</code></td>
+<td>直接装箱</td>
+</tr>
+<tr>
+<td><code>bool</code></td>
+<td><code>KY_BOOL</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>const char*</code></td>
+<td><code>KY_STRING</code></td>
+<td>拷贝进字符串池</td>
+</tr>
+<tr>
+<td><code>kyVec3*</code> 等结构指针</td>
+<td><code>KY_NATIVE</code></td>
+<td>封装指针 + dtor</td>
+</tr>
+<tr>
+<td><code>kyEntity</code></td>
+<td><code>KY_NATIVE</code></td>
+<td>封装实体句柄，校验有效性后再放行</td>
+</tr>
+<tr>
+<td><code>kyNativeFn</code></td>
+<td><code>KY_NATIVE</code></td>
+<td>原生函数</td>
+</tr>
+</tbody>
+</table>
+<h4 id="882">8.8.2 原生函数注册</h4>
+<pre><code class="language-c">// C 侧注册引擎 API 到 kyx 命名空间 &quot;engine&quot;
+static kyValue n_entity_spawn(kyVM *vm, kyValue *args, int argc, void *user) {
+    kyWorld *w = (kyWorld *)user;
+    kyEntity e = ky_world_spawn(w);
+    return ky_value_native(vm, entity_handle_create(e));  // 封装+注册 dtor
+}
+
+// 引擎初始化时
+ky_vm_register_native(vm, &quot;engine&quot;, &quot;spawn&quot;, n_entity_spawn, engine-&gt;world);
+ky_vm_register_native(vm, &quot;engine&quot;, &quot;add_component&quot;, n_add_comp, engine-&gt;world);
+ky_vm_register_native(vm, &quot;engine&quot;, &quot;get_component&quot;, n_get_comp, engine-&gt;world);
+ky_vm_register_native(vm, &quot;engine&quot;, &quot;log&quot;, n_log, NULL);
+</code></pre>
+<h4 id="883-kyx">8.8.3 kyx 侧使用引擎</h4>
+<pre><code>use builtin &quot;engine&quot; namespace engine;
+use builtin &quot;stdio&quot; namespace stdio;
+
+function on_fixed_update(dt) {
+    let e = engine.spawn();
+    engine.add_component(e, &quot;transform&quot;, {x: 0.0, y: 0.0});
+    engine.add_component(e, &quot;rigidbody&quot;, {mass: 1.0});
+    let rb = engine.get_component(e, &quot;rigidbody&quot;);
+    rb.linear_velocity.y = -9.8 * dt;
+    stdio.print(&quot;entity &quot;, e.id);
+}
+</code></pre>
+<h4 id="884">8.8.4 句柄安全</h4>
+<ul>
+<li><code>kyEntity</code> 封装持有 <code>world_id + entity_id + version</code>，每次解封时 <code>ky_entity_valid()</code> 校验，失败抛 <code>KY_ERR_STALE_HANDLE</code>，杜绝悬垂引用。</li>
+<li>所有跨语言指针一律经注册表登记，不裸传地址。</li>
+</ul>
+<h3 id="89">8.9 语言实现工作量评估</h3>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>产出</th>
+<th>预估规模（C 代码）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>预处理器（强制注释）</td>
+<td><code>lex/forced_comment.c</code></td>
+<td>~150 行</td>
+</tr>
+<tr>
+<td>词法分析器</td>
+<td><code>lex/lexer.c</code></td>
+<td>~700 行</td>
+</tr>
+<tr>
+<td>语法分析器</td>
+<td><code>parse/parser.c</code></td>
+<td>~1200 行</td>
+</tr>
+<tr>
+<td>语义/模块解析</td>
+<td><code>parse/resolver.c</code></td>
+<td>~600 行</td>
+</tr>
+<tr>
+<td>字节码编译器</td>
+<td><code>compiler/compiler.c</code></td>
+<td>~1500 行</td>
+</tr>
+<tr>
+<td>虚拟机</td>
+<td><code>vm/vm.c</code> + <code>vm/value.c</code></td>
+<td>~2000 行</td>
+</tr>
+<tr>
+<td>GC</td>
+<td><code>vm/gc.c</code></td>
+<td>~500 行</td>
+</tr>
+<tr>
+<td>原生绑定（引擎 API）</td>
+<td><code>script/bindings.c</code></td>
+<td>~800 行</td>
+</tr>
+<tr>
+<td>合计</td>
+<td></td>
+<td>~7500 行</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="9-python">9. Python 绑定与工具链</h2>
+<h3 id="91">9.1 绑定方式</h3>
+<ul>
+<li>基于 <strong>CPython C API</strong>（Python ≥ 3.8），将 <code>ky_*</code> 核心接口以模块 <code>kronyx</code> 暴露。</li>
+<li>内存所有权：Python 侧持有的是 <code>kyValue</code> 的透明代理对象（<code>PyObject*</code> 包装 handle），引擎销毁时通过 weakref 回调失效，避免 double-free。</li>
+<li>头文件目录：<code>include/kronyx/python.h</code>，仅依赖稳定 ABI 子集（<code>Py_LIMITED_API</code> 可选，首版全量 C API 优先）。</li>
+</ul>
+<h3 id="92-python">9.2 示例：Python 编辑器脚本</h3>
+<pre><code class="language-python">import kronyx as kx
+
+def build_level():
+    world = kx.world()                       # 当前场景世界
+    player = world.spawn()
+    player.add_component(&quot;transform&quot;, x=0.0, y=1.0, z=0.0)
+    player.add_component(&quot;sprite&quot;, texture=&quot;assets/player.png&quot;)
+    player.add_component(&quot;script_source&quot;, path=&quot;game/player.nus&quot;)  # kyx 脚本挂载
+
+    camera = world.spawn()
+    camera.add_component(&quot;camera&quot;, fov=60.0, near=0.1, far=500.0)
+    kx.save_scene(&quot;levels/level_01.kyscene&quot;)
+
+if __name__ == &quot;__main__&quot;:
+    build_level()
+</code></pre>
+<h3 id="93">9.3 角色分工</h3>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>语言</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>游戏内每帧逻辑</td>
+<td>kyx</td>
+<td>挂 <code>ScriptSource</code> 组件</td>
+</tr>
+<tr>
+<td>关卡构建/批量处理</td>
+<td>Python</td>
+<td>一次性工具脚本</td>
+</tr>
+<tr>
+<td>引擎测试</td>
+<td>C（单元）+ kyx（集成）</td>
+<td>双轨</td>
+</tr>
+<tr>
+<td>编辑器插件/热键</td>
+<td>Python</td>
+<td>ImGui 面板扩展</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="10-gui">10. GUI 编辑器</h2>
+<h3 id="101-dear-imgui">10.1 技术选型：Dear ImGui</h3>
+<ul>
+<li><strong>即时模式</strong>：编辑器面板代码极简，无需模型-视图同步；与 RHI 后端天然集成（复用 <code>ky_rd_*</code> 的 imgui 后端适配器）。</li>
+<li>相比 Qt：编译链轻、无 MOC、跨平台一致、与渲染帧耦合低。编辑器对"皮肤/本地化/复杂控件树"需求低，ImGui 的即时 API 足够。</li>
+<li>放弃 Qt 的理由：Qt 依赖 moc/元对象系统，增加三平台构建复杂度；对本项目收益集中在控件库，而 ImGui 配合少量自绘即可覆盖。</li>
+</ul>
+<h3 id="102">10.2 布局</h3>
+<pre><code class="language-mermaid">graph TD
+    A[&quot;DockSpace (ImGui DockBuilder)&quot;]
+    B[&quot;Viewport: 场景视口(FBO)&quot;]
+    C[&quot;Hierarchy: 实体树&quot;]
+    D[&quot;Properties: 组件属性检查器&quot;]
+    E[&quot;Console: 日志/编译警告/kyx错误&quot;]
+    F[&quot;Profiler: 帧时间分帧图&quot;]
+    G[&quot;Asset Browser: 资源预览&quot;]
+    A --&gt; B
+    A --&gt; C
+    A --&gt; D
+    A --&gt; E
+    A --&gt; F
+    A --&gt; G
+</code></pre>
+<h3 id="103">10.3 面板职责</h3>
+<table>
+<thead>
+<tr>
+<th>面板</th>
+<th>功能</th>
+<th>关键实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>视口</td>
+<td>3D 透视 + 2D 正交切换；Gizmo 平移/旋转/缩放</td>
+<td>ImGuizmo；FBO 渲染 → <code>ImTextureID</code></td>
+</tr>
+<tr>
+<td>层级</td>
+<td>实体树、拖拽重排、创建/删除</td>
+<td>基于场景图父子关系</td>
+</tr>
+<tr>
+<td>属性</td>
+<td>按组件反射编辑字段（数值/枚举/资源引用/脚本路径）</td>
+<td>组件反射表（第 3.4 节 <code>kyComponentType</code> + 反射描述）</td>
+</tr>
+<tr>
+<td>控制台</td>
+<td>引擎日志、kyx 编译警告、运行期错误（含行号）、Python print</td>
+<td>统一日志总线</td>
+</tr>
+<tr>
+<td>性能</td>
+<td>帧耗时、固定步耗时、GC 暂停、DrawCall 数、三角面数</td>
+<td>环形缓冲时序图</td>
+</tr>
+<tr>
+<td>资源浏览器</td>
+<td>纹理/网格/场景/kyx 文件预览与拖拽到场景</td>
+<td>资源管理器遍历</td>
+</tr>
+</tbody>
+</table>
+<h3 id="104-kyx">10.4 调试器集成（kyx）</h3>
+<ul>
+<li>编辑器内嵌 KyxVM 的调试协议：断点（按文件+行）、单步、栈查看、变量监视。</li>
+<li>实现：VM 在执行前检查 <code>debug_info</code> 映射表，命中断点则回退到编辑器事件循环（<code>ky_vm_debug_hook(vm, cb)</code>），不阻塞主线程。</li>
+</ul>
+<h3 id="105">10.5 热重载流程</h3>
+<ol>
+<li>监视器检测到 <code>*.nus</code> / 着色器 / 纹理变更。</li>
+<li>暂停固定步循环 → 重新编译脚本模块 → 保留实体与组件数据 → 重启脚本系统。</li>
+<li>失败则回滚到上一个成功编译版本并报告错误，编辑会话不崩溃。</li>
+</ol>
+<hr />
+<h2 id="11_1">11. 构建系统</h2>
+<h3 id="111-cmake">11.1 顶层 CMake 结构</h3>
+<pre><code class="language-text">CMakeLists.txt                     # 顶层
+cmake/
+  options.cmake                    # 全局开关
+  deps.cmake                       # FetchContent 依赖
+  toolchains/                      # 平台工具链提示文件
+include/kronyx/*.h                 # 公共头文件（稳定 ABI）
+src/
+  core/ cmake 目标 ky_core
+  ecs/            ky_ecs
+  scene/          ky_scene
+  resource/       ky_resource
+  render/         ky_render
+  render/gl/      ky_backend_gl
+  render/vk/      ky_backend_vk
+  physics/        ky_physics
+  script/         ky_script
+  python/         ky_python
+  audio/          ky_audio
+tools/editor/     ky_editor（链接引擎 + imgui）
+demos/platformer/ demos_platformer
+demos/roam3d/     demos_roam3d
+tests/            ky_tests
+</code></pre>
+<h3 id="112-cmake">11.2 CMake 选项</h3>
+<pre><code class="language-cmake">option(KYR_BUILD_EDITOR  &quot;Build ImGui editor&quot;              ON)
+option(KYR_BUILD_DEMOS   &quot;Build demo games&quot;                ON)
+option(KYR_BUILD_TESTS   &quot;Build unit tests&quot;                ON)
+option(KYR_BUILD_PYTHON  &quot;Build Python bindings&quot;           ON)  # 编辑器默认开，发布可关
+option(KYR_RENDERER_GL   &quot;Enable OpenGL backend&quot;           ON)
+option(KYR_RENDERER_VULKAN &quot;Enable Vulkan backend&quot;         ON)
+option(KYR_SCRIPT_OPT_COMPUTED_GOTO &quot;Computed goto dispatch&quot; ON)
+option(KYR_ENABLE_SANITIZERS &quot;ASan/UBSan in debug&quot;         OFF)
+</code></pre>
+<h3 id="113-fetchcontent">11.3 依赖管理（FetchContent）</h3>
+<table>
+<thead>
+<tr>
+<th>依赖</th>
+<th>用途</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GLFW 3.4</td>
+<td>窗口/输入</td>
+<td>平台抽象</td>
+</tr>
+<tr>
+<td>glad2</td>
+<td>GL loader</td>
+<td>生成式，提交到 repo 避免网络依赖</td>
+</tr>
+<tr>
+<td>glslang / SPIRV-Tools</td>
+<td>GLSL→SPIR-V</td>
+<td>仅 Vulkan 后端构建时引入</td>
+</tr>
+<tr>
+<td>glm</td>
+<td>数学库</td>
+<td>首版可选用，与自研 <code>ky_math</code> 二选一</td>
+</tr>
+<tr>
+<td>stb_image</td>
+<td>纹理解码</td>
+<td>单头文件</td>
+</tr>
+<tr>
+<td>Dear ImGui + ImGuizmo</td>
+<td>编辑器</td>
+<td>子模块或 FetchContent</td>
+</tr>
+<tr>
+<td>miniaudio</td>
+<td>音频</td>
+<td>单头文件</td>
+</tr>
+<tr>
+<td>Python Dev Headers</td>
+<td>Python 绑定</td>
+<td><code>find_package(Python)</code> 条件引入</td>
+</tr>
+<tr>
+<td>Unity Build 预编译头</td>
+<td>编译提速</td>
+<td>可选 <code>KYR_UNITY_BUILD</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="114">11.4 平台注意事项</h3>
+<table>
+<thead>
+<tr>
+<th>平台</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Windows</td>
+<td>MSVC：<code>/W4 /permissive-</code>；导出宏 <code>KY_API=__declspec(dllexport/dllimport)</code>；链接 opengl32</td>
+</tr>
+<tr>
+<td>Linux</td>
+<td>GCC/Clang：<code>-Wall -Wextra -Werror=format</code>；链接 X11/wayland（GLFW 处理）；Vulkan 可选 <code>find_package(Vulkan)</code></td>
+</tr>
+<tr>
+<td>macOS</td>
+<td>只启用 GL 后端（Vulkan 经 MoltenVK 可选）；需处理 OpenGL deprecated 警告</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>编译器要求：C11（<code>-std=c11</code>），MSVC 2019+ / GCC 9+ / Clang 12+。</li>
+<li>导出符号由 <code>include/kronyx/export.h</code> 统一控制 <code>KY_API</code>。</li>
+</ul>
+<hr />
+<h2 id="12_1">12. 示例游戏</h2>
+<h3 id="121-demo-a2d-demosplatformer">12.1 Demo A：2D 平台跳跃（<code>demos/platformer</code>）</h3>
+<ul>
+<li>场景：砖块关卡（Tiled 地图导入）、玩家、敌人、金币、粒子（简单）。</li>
+<li>组件：<code>Transform, Sprite, RigidBody(2D), BoxCollider, PlayerControl(kyx), EnemyAI(kyx), Health, Respawn</code>。</li>
+<li>核心逻辑全部用 kyx 编写，演示引擎/物理/脚本三者协作：</li>
+</ul>
+<pre><code>use builtin &quot;engine&quot; namespace engine;
+use builtin &quot;math&quot;  namespace math;
+
+const GRAVITY = -30.0;
+const JUMP    =  12.0;
+const SPEED   =   5.0;
+
+function on_fixed_update(dt) {
+    let self = engine.self_entity();                 // 当前脚本挂载实体
+    let rb   = engine.get_component(self, &quot;rigidbody&quot;);
+    let input = engine.input_axis(&quot;horizontal&quot;);     // -1..1
+    rb.linear_velocity.x = input * SPEED;
+
+    if (engine.input_pressed(&quot;jump&quot;) &amp;&amp; self.on_ground()) {
+        rb.linear_velocity.y = JUMP;
+    }
+}
+</code></pre>
+<ul>
+<li>工程入口：<code>demos/platformer/main.c</code>（引擎初始化、加载场景、绑定输入）。</li>
+</ul>
+<h3 id="122-demo-b3d-demosroam3d">12.2 Demo B：3D 漫游（<code>demos/roam3d</code>）</h3>
+<ul>
+<li>场景：低多边形地形 + 若干建筑/球体（演示阴影与光照）、自由相机（WASD + 鼠标）。</li>
+<li>特性：方向光 + CSM 阴影、8 点光、物理球堆叠（演示约束求解）、FPS 显示、碰撞射线拾取。</li>
+<li>相机控制用 kyx 脚本 + <code>engine.camera_move(eye, center, up)</code> 原生调用。</li>
+</ul>
+<h3 id="123-demo">12.3 Demo 中的脚本工作流</h3>
+<ol>
+<li>编辑器内创建实体 → 添加 <code>ScriptSource</code> 组件 → 选择 <code>.nus</code> 文件。</li>
+<li>保存场景 → 运行 → 脚本系统编译并热载入。</li>
+<li>修改 <code>.nus</code> 保存 → 热重载即时生效，控制台输出编译警告。</li>
+</ol>
+<hr />
+<h2 id="13_1">13. 编译与集成说明</h2>
+<h3 id="131">13.1 从源码构建</h3>
+<pre><code class="language-bash"># 1. 克隆并初始化
+git clone &lt;repo-url&gt; kronyx &amp;&amp; cd kronyx
+git submodule update --init --recursive
+
+# 2. 配置（Linux/macOS）
+cmake -B build -G &quot;Unix Makefiles&quot; \
+      -DKYR_BUILD_EDITOR=ON -DKYR_BUILD_DEMOS=ON -DKYR_BUILD_TESTS=ON \
+      -DKYR_RENDERER_VULKAN=ON -DKYR_RENDERER_GL=ON
+
+# Windows 用 &quot;Visual Studio 17 2022&quot; 生成器即可，选项一致
+
+# 3. 构建
+cmake --build build -j
+
+# 4. 运行测试
+ctest --test-dir build
+
+# 5. 运行编辑器
+./build/tools/editor/ky_editor
+</code></pre>
+<h3 id="132">13.2 运行时目录布局</h3>
+<pre><code class="language-text">bin/
+  ky_editor / ky_demo_platformer / ky_demo_roam3d
+assets/              # 纹理、网格、shader、字体
+shaders/             # GLSL 源 + 编译缓存
+scripts/             # kyx 源文件（*.nus）
+libs/                # external 库定位（libname:path 的 path 根）
+  libmath/math.nus
+scenes/              # *.kyscene
+cache/shaders/       # SPIR-V 缓存
+</code></pre>
+<h3 id="133">13.3 集成注意事项</h3>
+<ul>
+<li><code>KYX_IMPORT_PATH</code> 默认指向 <code>scripts/</code> 与 <code>libs/</code>，运行时经 <code>ky_vm_set_import_root</code> 设定。</li>
+<li>脚本编译失败不影响引擎崩溃：<code>ky_vm_load_file</code> 返回错误码，编辑器控制台呈现，游戏以"上次可用版本"继续。</li>
+<li>Python 仅在 <code>KYR_BUILD_PYTHON=ON</code> 且 <code>python_enabled=1</code> 时初始化；发布构建可完全裁剪。</li>
+<li>平台宏约定：<code>KY_PLATFORM_WIN32 / KY_PLATFORM_LINUX / KY_PLATFORM_MACOS</code>；后端宏 <code>KY_RENDERER_GL / KY_RENDERER_VULKAN</code>。</li>
+</ul>
+<hr />
+<h2 id="14">14. 开发路线图</h2>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>里程碑</th>
+<th>主要交付</th>
+<th>验收标准</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>P0 奠基</strong>（1-2 月）</td>
+<td>平台层 + 核心层</td>
+<td>GLFW 窗口、输入、时间、内存池、容器、数学库、日志</td>
+<td>空窗口 60FPS；核心单测全绿</td>
+</tr>
+<tr>
+<td><strong>P1 ECS 与场景</strong>（1-2 月）</td>
+<td>实体系统</td>
+<td>archetype ECS、组件注册、系统调度、场景序列化</td>
+<td>10 万实体全系统迭代 &lt; 5ms（Debug off）</td>
+</tr>
+<tr>
+<td><strong>P2 渲染 v1</strong>（2-3 月）</td>
+<td>RHI + GL 后端</td>
+<td>网格/纹理/着色器/管线/2D 批次/3D 前向+方向光阴影</td>
+<td>平台跳跃 demo 可玩；DrawCall 预算达标</td>
+</tr>
+<tr>
+<td><strong>P3 物理</strong>（1-2 月）</td>
+<td>内置物理</td>
+<td>刚体积分、SAP、GJK/EPA、PGS 求解、2D 模式、射线</td>
+<td>物理单测 + 球堆叠 demo 稳定</td>
+</tr>
+<tr>
+<td><strong>P4 脚本语言</strong>（3-4 月）</td>
+<td>kyx 全栈</td>
+<td>预处理/词法/语法/编译/VM/GC/引擎绑定</td>
+<td>kyx 测试套件（覆盖强制注释、命名冲突警告、闭包）通过</td>
+</tr>
+<tr>
+<td><strong>P5 编辑器</strong>（2-3 月）</td>
+<td>GUI 工具链</td>
+<td>ImGui 面板、视口、属性、控制台、性能、kyx 调试器、热重载</td>
+<td>编辑器内完成"搭场景→写脚本→运行→调试"闭环</td>
+</tr>
+<tr>
+<td><strong>P6 收尾</strong>（1 月）</td>
+<td>Vulkan 后端 + 打磨</td>
+<td>Vulkan 后端对齐 GL 功能、CSM 增强、发布构建裁剪</td>
+<td>两后端功能等价；demo 双平台冒烟通过</td>
+</tr>
+</tbody>
+</table>
+<p><strong>风险与对策</strong></p>
+<table>
+<thead>
+<tr>
+<th>风险</th>
+<th>对策</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>kyx VM 工作量超预期</td>
+<td>分阶段交付：先栈式 VM 跑通语义，再切换寄存器优化；字节码格式预留兼容层</td>
+</tr>
+<tr>
+<td>Vulkan 后端耗时</td>
+<td>后端完全隔离在 RHI 之后；GL 保底可用，Vulkan 延后不影响主体功能</td>
+</tr>
+<tr>
+<td>GC 与引擎句柄生命周期耦合</td>
+<td>句柄统一注册表 + 强/弱引用分类，P4 阶段即建立，避免后期返工</td>
+</tr>
+<tr>
+<td>跨平台差异</td>
+<td>CI 三平台构建 + <code>ctest</code>；GL 后端为兼容性安全网</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="15">15. 关键技术决策汇总</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>决策</th>
+<th>备选方案</th>
+<th>选择理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>核心用 C11</td>
+<td>C++/Rust</td>
+<td>ABI 稳定、嵌入友好、工具链极简；用结构体+函数指针模拟 OOP 成本可控</td>
+</tr>
+<tr>
+<td>2</td>
+<td>ECS 用 Archetype 存储</td>
+<td>稀疏集 / 传统 SceneGraph+继承</td>
+<td>缓存局部性最好，批量迭代性能高；场景层保留层级关系</td>
+</tr>
+<tr>
+<td>3</td>
+<td>渲染 RHI 抽象</td>
+<td>直接 GL 或直接 Vulkan</td>
+<td>一次设计跑双后端；上层与 API 解耦便于测试与未来扩展</td>
+</tr>
+<tr>
+<td>4</td>
+<td>固定时间步 + 插值</td>
+<td>可变时间步</td>
+<td>物理/脚本确定性、可复现调试、联机友好</td>
+</tr>
+<tr>
+<td>5</td>
+<td>自研物理</td>
+<td>集成 Bullet/Jolt</td>
+<td>满足"内置物理"定位；规模需求小（5k 体），自研可控且无依赖</td>
+</tr>
+<tr>
+<td>6</td>
+<td>自研 kyx VM</td>
+<td>嵌入 Lua/Python</td>
+<td>用户指定原生脚本语言；动态类型 + 强制注释特性只有自研可实现</td>
+</tr>
+<tr>
+<td>7</td>
+<td>分代 GC</td>
+<td>引用计数</td>
+<td>游戏逻辑临时对象多，分代吞吐高；引用计数在循环引用下易泄漏</td>
+</tr>
+<tr>
+<td>8</td>
+<td>编辑器用 ImGui</td>
+<td>Qt</td>
+<td>即时模式 + 复用 RHI；构建链轻、无 moc 负担</td>
+</tr>
+<tr>
+<td>9</td>
+<td>着色器源统一 GLSL</td>
+<td>HLSL 入口</td>
+<td>GLSL 双后端可直编（GL）与交叉编译（Vulkan/SPIR-V），生态一致</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Python 仅限工具层</td>
+<td>游戏逻辑用 Python</td>
+<td>性能关键路径交给 kyx/原生；Python 免解释器依赖打包</td>
+</tr>
+<tr>
+<td>11</td>
+<td>资源异步加载 + 热重载</td>
+<td>全同步加载</td>
+<td>编辑器迭代体验；发布构建可关</td>
+</tr>
+<tr>
+<td>12</td>
+<td>CMake + FetchContent</td>
+<td>手工 vendored 依赖</td>
+<td>依赖版本锁定 + 三平台一致；生成型依赖（glad）入库防断网</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="a-kyx">附录 A：完整 kyx 示例（综合演示语言特性）</h2>
+<pre><code class="language-js">// file: libs/libmath/math.nus  （external 库）
+namespace math;
+
+function clamp(v, lo, hi) {
+    if (v &lt; lo) return lo;
+    if (v &gt; hi) return hi;
+    return v;
+}
+
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+</code></pre>
+<pre><code class="language-js">// file: scripts/utils.nus   （local 模块）
+function greet(name) {
+    return &quot;hello, &quot; + name;
+}
+</code></pre>
+<pre><code class="language-js">// file: scripts/main.nus
+use external &quot;libmath:libs/math.nus&quot; namespace math;
+use builtin  &quot;stdio&quot; namespace stdio;
+use local    &quot;utils.nus&quot;;
+
+// 若 utils.nus 与其他库冲突，则自动重命名（如 p_utils）并警告
+
+class Player {
+    var hp = 100;
+    var pos = {x: 0.0, y: 0.0};
+
+    function damage(v) {
+        self.hp = math.clamp(self.hp - v, 0, 100);
+        return self.hp;
+    }
+}
+
+function on_begin() {
+    // 强制注释：可在关键字/字符串内部任意插入，剥离后语义不变
+    le[/*&lt;!--{tag}--&gt;*/]t p = new Player();
+    stdio.print(p.damage(120));                      // 输出 0
+    stdio.print(math.lerp(0, 10, 0.5));              // 输出 5.0
+    stdio.print(&quot;tes[/*&lt;!--{inline}--&gt;*/]t&quot;);        // 输出 test
+    i[/*&lt;!--{kw}--&gt;*/]f (true) { stdio.print(&quot;ok&quot;); }
+}
+</code></pre>
+<pre><code class="language-js">// 文件头 use 块 + 控制流 + 闭包
+use builtin &quot;stdio&quot; namespace stdio;
+
+function make_counter() {
+    var n = 0;
+    return function () { n = n + 1; return n; };     // 闭包捕获 upvalue
+}
+
+function on_end() {
+    let c = make_counter();
+    stdio.print(c());                                 // 1
+    stdio.print(c());                                 // 2
+    for (var i = 0; i &lt; 3; i = i + 1) {
+        stdio.print(&quot;i=&quot; + i);
+    }
+}
+</code></pre>
+<h2 id="b">附录 B：术语表</h2>
+<table>
+<thead>
+<tr>
+<th>术语</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RHI</td>
+<td>Render Hardware Interface，硬件无关渲染接口层</td>
+</tr>
+<tr>
+<td>ECS</td>
+<td>Entity-Component-System</td>
+</tr>
+<tr>
+<td>Archetype</td>
+<td>同组件集合实体的紧凑存储组</td>
+</tr>
+<tr>
+<td>SAP</td>
+<td>Sweep and Prune 宽相碰撞检测</td>
+</tr>
+<tr>
+<td>GJK/EPA</td>
+<td>Gilbert-Johnson-Keerthi 距离算法 / Expanding Polytope Algorithm</td>
+</tr>
+<tr>
+<td>PGS</td>
+<td>Projected Gauss-Seidel 约束迭代求解</td>
+</tr>
+<tr>
+<td>CSM</td>
+<td>Cascaded Shadow Map 级联阴影</td>
+</tr>
+<tr>
+<td>CCD</td>
+<td>Continuous Collision Detection 连续碰撞检测</td>
+</tr>
+<tr>
+<td>KyxVM</td>
+<td>Kronyx 语言虚拟机（寄存器式）</td>
+</tr>
+<tr>
+<td>upvalue</td>
+<td>闭包捕获的外层局部变量</td>
+</tr>
+<tr>
+<td>FetchContent</td>
+<td>CMake 内置依赖下载/集成机制</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<p><em>本白皮书为 Kronyx 引擎的架构设计定稿，供工程实施、代码评审与后续演进参考。所有接口签名以 <code>include/kronyx/</code> 公共头文件为准，本文档与其冲突时以头文件为最终裁决。</em></p></body></html>

@@ -1,52 +1,55 @@
-# Kronyx Engine - Progress Log
+# Kronyx Progress Log
 
-Last updated: 2026-08-28 09:00 UTC
+## P1: Core Foundations
+- [x] Define project structure and CMake configuration
+- [x] Implement core type system (kyValue, kyString, kyArray)
+- [x] Implement object model (kyObject with metatables)
+- [x] Implement VM bytecode execution engine
+- [x] Implement garbage collector
+- [x] Implement stdlib basics (math, string, table)
+- [x] Implement kyx scripting language parser
 
-## Current Status
-Phase P5 (ImGui Editor) - In Progress
+## P2: Rendering & ECS
+- [x] Implement basic ECS framework
+- [x] Implement Transform component
+- [x] Implement Renderer component
+- [x] Implement basic 2D rendering pipeline
+- [x] Implement Sprite component
+- [x] Implement Camera system
+- [x] Implement basic physics (AABB collision)
 
-## Milestones
+## P3: Physics & Animation
+- [x] Implement rigid body physics
+- [x] Implement collision detection (SAP broadphase)
+- [x] Implement basic constraints (joints)
+- [x] Implement sprite animation system
+- [x] Implement particle system
+- [x] Implement skeletal animation foundation
+- [x] Add unit tests for all components
 
-| Phase | Status | Tests | Notes |
-|-------|--------|-------|-------|
-| P0 Core | Done | 3/3 | ASan clean |
-| P1 ECS | Done | 3/3 | ASan clean |
-| P2 Render | Done | 4/4 | ASan clean |
-| P3 Physics | Done | 5/5 | ASan clean |
-| P4 kyx | Done | 6/6 | ASan clean (with local-var workaround) |
-| P5 Editor | Pending | - | ImGui not started |
-| P6 Vulkan | Pending | - | Stub only |
+## P4: Scripting + UI
+- [x] Lexer tokenizer complete: identifiers, keywords, operators, literals, hex
+- [x] Parser: recursive descent for expressions, statements, blocks, functions, if/while/for loops
+- [x] Compiler: AST-to-bytecode with register allocation, binary/unary ops, control flow
+- [x] VM execution loop: 40+ opcodes implemented
+- [x] Function loading and global registration
+- [ ] Call/return mechanism needs debugging: 13 new tests fail
+- [ ] 93/106 tests passing (88%)
 
-## Recent Changes
+## P5: Editor & Asset Pipeline
+- [ ] ImGui integration for scene editor
+- [ ] Node inspector panel
+- [ ] Component editor panels
+- [ ] Asset browser and import pipeline
+- [ ] Visual scripting foundation
 
-- Fixed hashmap owned-key memory management (2 bugs resolved)
-- Fixed physics.h kySphere redefinition conflict with math.h
-- Fixed physics.c ky_vec3_sub/add call signature (value vs pointer)
-- Fixed physics test zero-gravity assertion logic
-- Created .github/workflows/build.yml (cross-platform CI)
-- Created task.log and progress.log for tracking
+## P6: Examples + Vulkan
+- [ ] 2D platformer demo
+- [ ] 3D navigation demo
+- [ ] Vulkan backend skeleton (RHI abstraction complete, implementation deferred)
+- [ ] Final integration test
 
-## Next Steps
-
-1. Start P5: ImGui editor panels (viewport, hierarchy, properties)
-2. Integrate kyx VM with ECS component system
-3. Add kyx-to-C binding layer (engine.world, entity components)
-4. Implement full bytecode compiler for kyx
-5. Commit and push P5
-6. Continue through P6: Vulkan backend + example games
-
-## Build Commands
-
-```bash
-# Configure
-cmake -B build -G "Unix Makefiles" -DKYR_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
-
-# Build
-cmake --build build -j2
-
-# Test
-ctest --test-dir build --output-on-failure
-```
+---
 
 ## Key Decisions
 
@@ -54,3 +57,13 @@ ctest --test-dir build --output-on-failure
 - SAP only sweeps X-axis for broadphase (Y/Z axes deferred)
 - GJK/EPA deferred to later in P3; basic sphere/sphere SAT kept as fallback
 - CI targets ubuntu-latest, windows-latest, macos-latest with GCC/Clang/MSVC
+
+## Build
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j2
+
+# Test
+ctest --test-dir build --output-on-failure
+```

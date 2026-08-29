@@ -24,6 +24,7 @@ typedef struct kyVM kyVM;
 typedef struct kyLexer kyLexer;
 typedef struct kyParser kyParser;
 typedef struct kyAstNode kyAstNode;
+typedef struct kyProto kyProto;
 
 typedef enum kyValType {
     KYT_NIL = 0, KYT_BOOL, KYT_INT, KYT_FLOAT, KYT_STRING,
@@ -116,5 +117,8 @@ KY_API int     ky_vm_call(kyVM *vm, const char *func_name, kyValue *args, int ar
 KY_API void    ky_vm_register_native(kyVM *vm, const char *ns, const char *name, kyNativeFn fn, void *user);
 KY_API const char *ky_vm_last_error(kyVM *vm);
 KY_API void    ky_vm_set_import_root(kyVM *vm, const char *dir);
+
+/* Compiler: AST → bytecode */
+KY_API kyProto *kyx_compile(kyVM *vm, kyAstNode *root, char *err_buf, int err_buf_size);
 
 #endif
