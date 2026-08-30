@@ -161,7 +161,7 @@ static kyAstNode *parse_postfix(kyParser *p, kyAstNode *base) {
         } else if (t->kind == KYX_TK_INC || t->kind == KYX_TK_DEC) {
             tok_advance(p);
             kyAstNode *n = ast_new(KY_AST_EXPR_UNOP, t->line);
-            strncpy(n->as.unop.op, t->start, 3);
+            n->as.unop.op[0] = t->start[0]; n->as.unop.op[1] = '\0';
             n->as.unop.operand = base;
             base = n;
         } else break;
@@ -174,7 +174,8 @@ static kyAstNode *parse_prefix(kyParser *p) {
     if (t->kind == KYX_TK_MINUS || t->kind == KYX_TK_NOT) {
         tok_advance(p);
         kyAstNode *n = ast_new(KY_AST_EXPR_UNOP, t->line);
-        strncpy(n->as.unop.op, t->start, 3);
+        n->as.unop.op[0] = t->start[0];
+        n->as.unop.op[1] = '\0';
         n->as.unop.operand = parse_prefix(p);
         return n;
     }
@@ -315,7 +316,11 @@ static kyAstNode *parse_expression(kyParser *p, int min_prec) {
         kyAstNode *n = ast_new(KY_AST_EXPR_BINOP, t->line);
         strncpy(n->as.binop.op, t->start, t->len < sizeof(n->as.binop.op) - 1 ? t->len : sizeof(n->as.binop.op) - 1);
         n->as.binop.left = left;
-        n->as.binop.right = parse_expression(p, right_assoc ? prec : prec + 1);
+        int next_min_prec = right_assoc ? prec : prec + 1;
+        if (op_idx >= 16) {
+            next_min_prec = 0;
+        }
+        n->as.binop.right = parse_expression(p, next_min_prec);
         if (!n->as.binop.right) { ast_free(n); return left; }
         left = n;
     }

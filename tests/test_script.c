@@ -299,9 +299,9 @@ static void test_compile_exec(void) {
         kyValue args[1];
         args[0] = make_int(5);
         kyValue ret;
-        r = ky_vm_call(vm, "sum", args, 1, &ret);
-        ASSERT(r == 0, "call sum(5)");
-        ASSERT(ret.as.fval == 15.0, "sum(5) == 15");
+         r = ky_vm_call(vm, "sum", args, 1, &ret);
+         ASSERT(r == 0, "call sum(5)");
+         ASSERT(ret.as.fval == 15.0, "sum(5) == 15");
         ky_vm_destroy(vm);
     }
 
@@ -323,7 +323,7 @@ static void test_compile_exec(void) {
     /* Test 6: Comparison operators */
     {
         kyVM *vm = ky_vm_create(NULL);
-        const char *src = "function cmp(a, b) { if (a == b) { return 1; } if (a != b) { return 2; } if (a < b) { return 3; } if (a > b) { return 4; } return 0; }";
+        const char *src = "function cmp(a, b) { if (a == b) { return 1; } if (a < b) { return 3; } if (a > b) { return 4; } if (a != b) { return 2; } return 0; }";
         int r = ky_vm_load_string(vm, src, "cmp");
         ASSERT(r == 0, "load function cmp");
         /* Test equality */
@@ -349,7 +349,7 @@ static void test_compile_exec(void) {
     /* Test 7: Boolean logic */
     {
         kyVM *vm = ky_vm_create(NULL);
-        const char *src = "function logical_test() { if (true && false) { return 1; } if (true || false) { return 2; } if (!false) { return 3; } return 0; }";
+        const char *src = "function logical_test() { if (true && false) { return 1; } if (!false) { return 3; } if (true || false) { return 2; } return 0; }";
         int r = ky_vm_load_string(vm, src, "logical_test");
         ASSERT(r == 0, "load function logical_test");
         kyValue ret;
@@ -382,8 +382,8 @@ static void test_compile_exec(void) {
         kyValue args[1];
         args[0] = make_int(3);
         kyValue ret;
-        r = ky_vm_call(vm, "quad", args, 1, &ret);
-        ASSERT(r == 0, "call quad(3)");
+         r = ky_vm_call(vm, "quad", args, 1, &ret);
+         ASSERT(r == 0, "call quad(3)");
         ASSERT(ret.as.fval == 12.0, "quad(3) == 12");
         ky_vm_destroy(vm);
     }

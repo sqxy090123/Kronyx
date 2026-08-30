@@ -12,7 +12,7 @@ typedef enum kyOpCode {
     OP_NEQ,      OP_LT,           OP_LE,       OP_GT,       OP_GE,
     OP_AND,      OP_OR,           OP_CONCAT,   OP_NEWARRAY = 25,
     OP_GETFIELD = 30,              OP_SETFIELD, OP_GETINDEX, OP_SETINDEX,
-    OP_GETGLOBAL,                      OP_SETGLOBAL,
+    OP_GETGLOBAL = 32,              OP_SETGLOBAL,
     OP_CLOSURE  = 40,              OP_CALL,    OP_TAILCALL, OP_RETURN,
     OP_JUMP     = 50,              OP_JMPIF,   OP_JMPIFNOT,
     OP_INVOKE   = 60,              OP_NATIVECALL,
@@ -25,7 +25,7 @@ typedef struct kyInstr {
 } kyInstr;
 
 typedef struct kyProto {
-    kyInstr   *code;
+    int       *code;
     int        code_count;
     int        code_cap;
     double    *constants;
@@ -135,24 +135,25 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
     for (int i = 0; i < locals_count && i < argc; i++) {
         vm->stack[base + i] = args[i];
     }
-    fprintf(stderr, "DEBUG: proto='%s' code_count=%d\n", proto->name ? proto->name : "?", proto->code_count);
-    for (int i = 0; i < proto->code_count && i < 10; i++) {
-        kyInstr inst = proto->code[i];
-        fprintf(stderr, "  instr[%d]: op=%d A=%d B=%d C=%d\n", i, inst.op, inst.A, inst.B, inst.C);
-    }
-    fprintf(stderr, "  START: pc=%d code_count=%d\n", pc, proto->code_count);
     while (pc + 3 < proto->code_count) {
-        kyInstr instr = proto->code[pc];
+        int opcode = proto->code[pc];
+        int A = proto->code[pc + 1];
+        int B = proto->code[pc + 2];
+        int C = proto->code[pc + 3];
         pc += 4;
-        int A = instr.A, B = instr.B, C = instr.C;
-        fprintf(stderr, "  LOOP: pc=%d op=%d\n", pc, instr.op);
-        const char *opname = "???";
-        if(instr.op==0)opname="LOADNIL";else if(instr.op==5)opname="MOVE";
-        else if(instr.op==6)opname="ADD";else if(instr.op==7)opname="SUB";
-        else if(instr.op==43)opname="RET";
-        fprintf(stderr, "EXEC [%s] op=%d(%s) A=%d B=%d C=%d\n",
-            proto->name ? proto->name : "?", instr.op, opname, A, B, C);
-        switch (instr.op) {
+        if (opcode == OP_GETGLOBAL) {
+            const char *name = proto->strings[B];
+            if (name) {
+                for (int i = 0; i < vm->proto_count; i++) {
+                    if (vm->protos[i].name && strcmp(vm->protos[i].name, name) == 0) {
+                        vm->stack[base + A] = (kyValue){KYT_FUNCTION, .as.closure = vm->closures[i]};
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        switch (opcode) {
             case OP_LOADNIL:
                 vm->stack[base + A] = nil_val();
                 break;
@@ -239,7 +240,7 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
             case OP_AND: {
                 kyValue a = vm->stack[base + B];
                 int truthy = (a.type != KYT_NIL && !(a.type == KYT_BOOL && !a.as.ival));
-                vm->stack[base + A] = truthy ? a : vm->stack[base + C];
+                vm->stack[base + A] = truthy ? vm->stack[base + C] : a;
                 break;
             }
             case OP_OR: {
@@ -249,13 +250,13 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                 break;
             }
             case OP_JMPIF:
-                if (!vm->stack[base + A].as.ival) pc += 4;
+                if (vm->stack[base + A].as.ival) pc += B - 4;
                 break;
             case OP_JMPIFNOT:
-                if (vm->stack[base + A].as.ival) pc += 4;
+                if (!vm->stack[base + A].as.ival) pc += B - 4;
                 break;
             case OP_JUMP:
-                pc += B;
+                pc += B - 4;
                 break;
             case OP_CALL: {
                 int fn_reg = A;
@@ -274,9 +275,38 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
             }
             case OP_RETURN: {
                 kyValue ret = vm->stack[base + A];
-                fprintf(stderr, "  -> RET type=%d fval=%f\n", ret.type, ret.as.fval); fflush(stderr);
+                if (ret.type == KYT_INT || ret.type == KYT_BOOL) {
+                    ret.type = KYT_FLOAT;
+                    ret.as.fval = (double)ret.as.ival;
+                }
                 vm->stack_top = saved_top;
                 return ret;
+            }
+            case OP_GETGLOBAL: {
+                const char *name = proto->strings[B];
+                if (!name) break;
+                int found = 0;
+                for (int i = 0; i < vm->proto_count && !found; i++) {
+                    if (vm->protos[i].name && strcmp(vm->protos[i].name, name) == 0) {
+                        vm->stack[base + A] = (kyValue){KYT_FUNCTION, .as.closure = vm->closures[i]};
+                        found = 1;
+                    }
+                }
+                if (!found) {
+                    vm->stack[base + A] = nil_val();
+                }
+                break;
+            }
+            case OP_SETGLOBAL: {
+                const char *name = proto->strings[B];
+                if (!name) break;
+                for (int i = 0; i < vm->proto_count; i++) {
+                    if (vm->protos[i].name && strcmp(vm->protos[i].name, name) == 0) {
+                        vm->globals[i] = vm->stack[base + A];
+                        break;
+                    }
+                }
+                break;
             }
             case OP_EXIT:
                 vm->stack_top = saved_top;
@@ -431,14 +461,14 @@ typedef struct kyCompileState {
 static void compile_emit(kyCompileState *cs, int opcode, int A, int B, int C) {
     if (cs->code_count >= cs->code_cap) {
         cs->code_cap = cs->code_cap ? cs->code_cap * 2 : 64;
-        cs->code = (int *)realloc(cs->code, (size_t)cs->code_cap * 4 * sizeof(int));
+        cs->code = (int *)realloc(cs->code, (size_t)cs->code_cap * sizeof(int));
     }
-    int idx = cs->code_count * 4;
+    int idx = cs->code_count;
     cs->code[idx++] = opcode;
     cs->code[idx++] = A;
     cs->code[idx++] = B;
     cs->code[idx++] = C;
-    cs->code_count++;
+    cs->code_count = idx;
 }
 
 static int compile_add_const(kyCompileState *cs, double val) {
@@ -513,53 +543,57 @@ static void compile_statement(kyCompileState *cs, kyAstNode *stmt) {
             break;
         }
         case KY_AST_IF_STMT: {
-            int cond_reg = 0;
-            compile_expression(cs, stmt->as.if_stmt.cond, cond_reg);
-            int jmp_idx = cs->code_count + 4;
-            compile_emit(cs, 52, cond_reg, 0, 0);
+            int cond_reg = cs->local_count;
+            int temp_reg = cs->local_count + 1;
+            compile_expression(cs, stmt->as.if_stmt.cond, temp_reg);
+            int jmp_idx = cs->code_count;
+            compile_emit(cs, 52, temp_reg, 0, 0);
             compile_block(cs, stmt->as.if_stmt.then_b);
             if (stmt->as.if_stmt.else_b) {
                 int jump_idx = cs->code_count;
                 compile_emit(cs, 50, 0, 0, 0);
                 int else_start = cs->code_count;
-                cs->code[jmp_idx] = else_start - jmp_idx;
-                cs->code[jmp_idx + 1] = else_start - jmp_idx;
+                cs->code[jmp_idx + 2] = else_start - jmp_idx;
                 compile_block(cs, stmt->as.if_stmt.else_b);
                 int end_of_else = cs->code_count;
                 compile_emit(cs, 50, 0, 0, 0);
                 int jump_end = cs->code_count;
-                cs->code[jump_idx] = jump_end - jump_idx;
+                cs->code[jump_idx + 2] = jump_end - jump_idx;
                 cs->code[end_of_else - 1] = end_of_else - jump_end;
             } else {
-                cs->code[jmp_idx] = cs->code_count - jmp_idx;
+                cs->code[jmp_idx + 2] = cs->code_count - jmp_idx;
             }
             break;
         }
         case KY_AST_WHILE_STMT: {
             int loop_start = cs->code_count;
-            int cond_reg = 0;
-            compile_expression(cs, stmt->as.while_stmt.cond, cond_reg);
-            int jmp_idx = cs->code_count + 4;
-            compile_emit(cs, 52, cond_reg, 0, 0);
+            int cond_reg = cs->local_count;
+            int temp_reg = cs->local_count + 1;
+            compile_expression(cs, stmt->as.while_stmt.cond, temp_reg);
+            int jmp_idx = cs->code_count;
+            compile_emit(cs, 52, temp_reg, 0, 0);
             compile_block(cs, stmt->as.while_stmt.body);
-            compile_emit(cs, 50, 0, loop_start - cs->code_count, 0);
-            cs->code[jmp_idx] = cs->code_count - jmp_idx;
+            int jmp_offset = loop_start - cs->code_count;
+            compile_emit(cs, 50, 0, jmp_offset, 0);
+            cs->code[jmp_idx + 2] = cs->code_count - jmp_idx;
             break;
         }
         case KY_AST_FOR_STMT: {
             if (stmt->as.for_stmt.init) compile_statement(cs, stmt->as.for_stmt.init);
             int loop_start = cs->code_count;
             if (stmt->as.for_stmt.cond) {
-                int cond_reg = 0;
-                compile_expression(cs, stmt->as.for_stmt.cond, cond_reg);
-                int jmp_idx = cs->code_count + 4;
-                compile_emit(cs, 52, cond_reg, 0, 0);
+                int cond_reg = cs->local_count;
+                int temp_reg = cs->local_count + 1;
+                compile_expression(cs, stmt->as.for_stmt.cond, temp_reg);
+                int jmp_idx = cs->code_count;
+                compile_emit(cs, 52, temp_reg, 0, 0);
                 compile_block(cs, stmt->as.for_stmt.body);
                 if (stmt->as.for_stmt.inc) {
                     compile_expression(cs, stmt->as.for_stmt.inc, 0);
                 }
-                compile_emit(cs, 50, 0, loop_start - cs->code_count, 0);
-                cs->code[jmp_idx] = cs->code_count - jmp_idx;
+                int jmp_offset = loop_start - cs->code_count;
+                compile_emit(cs, 50, 0, jmp_offset, 0);
+                cs->code[jmp_idx + 2] = cs->code_count - jmp_idx;
             }
             break;
         }
@@ -581,10 +615,10 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
         case KY_AST_EXPR_LITERAL: {
             kyToken *t = &node->as.literal.tok;
             if (t->kind == KYX_TK_INT_LIT) {
-                compile_emit(cs, 6, dest, (int)t->as.ival, 0);
+                compile_emit(cs, 2, dest, (int)t->as.ival, 0);
             } else if (t->kind == KYX_TK_FLOAT_LIT) {
                 int c = compile_add_const(cs, t->as.fval);
-                compile_emit(cs, 9, dest, c, 0);
+                compile_emit(cs, 4, dest, c, 0);
             } else if (t->kind == KYX_TK_STRING_LIT) {
                 int c = compile_add_string(cs, t->as.sval);
                 compile_emit(cs, 8, dest, c, 0);
@@ -608,6 +642,29 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
             break;
         }
         case KY_AST_EXPR_BINOP: {
+            if (strcmp(node->as.binop.op, "=") == 0 &&
+                node->as.binop.left &&
+                node->as.binop.left->kind == KY_AST_EXPR_IDENT) {
+                int local = compile_find_local(cs, node->as.binop.left->as.ident.name);
+                if (local >= 0) {
+                    if (strcmp(node->as.binop.op, "=") == 0) {
+                        compile_expression(cs, node->as.binop.right, local);
+                    } else if (strcmp(node->as.binop.op, "+=") == 0) {
+                        compile_expression(cs, node->as.binop.right, dest + 1);
+                        compile_emit(cs, 6, local, local, dest + 1);
+                    } else if (strcmp(node->as.binop.op, "-=") == 0) {
+                        compile_expression(cs, node->as.binop.right, dest + 1);
+                        compile_emit(cs, 7, local, local, dest + 1);
+                    } else if (strcmp(node->as.binop.op, "*=") == 0) {
+                        compile_expression(cs, node->as.binop.right, dest + 1);
+                        compile_emit(cs, 8, local, local, dest + 1);
+                    } else if (strcmp(node->as.binop.op, "/=") == 0) {
+                        compile_expression(cs, node->as.binop.right, dest + 1);
+                        compile_emit(cs, 9, local, local, dest + 1);
+                    }
+                    break;
+                }
+            }
             int lhs = dest;
             compile_expression(cs, node->as.binop.left, lhs);
             int rhs = (lhs == dest) ? (dest + 1) : dest;
@@ -615,13 +672,13 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
             if (strcmp(node->as.binop.op, "+") == 0) {
                 compile_emit(cs, 6, dest, lhs, rhs);
             } else if (strcmp(node->as.binop.op, "-") == 0) {
-                compile_emit(cs, 6, dest, lhs, rhs);
+                compile_emit(cs, 7, dest, lhs, rhs);
             } else if (strcmp(node->as.binop.op, "*") == 0) {
-                compile_emit(cs, 6, dest, lhs, rhs);
+                compile_emit(cs, 8, dest, lhs, rhs);
             } else if (strcmp(node->as.binop.op, "/") == 0) {
-                compile_emit(cs, 6, dest, lhs, rhs);
+                compile_emit(cs, 9, dest, lhs, rhs);
             } else if (strcmp(node->as.binop.op, "%") == 0) {
-                compile_emit(cs, 6, dest, lhs, rhs);
+                compile_emit(cs, 10, dest, lhs, rhs);
             } else if (strcmp(node->as.binop.op, "==") == 0) {
                 compile_emit(cs, 14, dest, lhs, rhs);
             } else if (strcmp(node->as.binop.op, "!=") == 0) {
@@ -645,22 +702,24 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
             if (strcmp(node->as.unop.op, "-") == 0) {
                 int val = dest;
                 compile_expression(cs, node->as.unop.operand, val);
-                compile_emit(cs, 12, dest, val, 0);
+                compile_emit(cs, 11, dest, val, 0);
             } else if (strcmp(node->as.unop.op, "!") == 0) {
                 int val = dest;
                 compile_expression(cs, node->as.unop.operand, val);
-                compile_emit(cs, 13, dest, val, 0);
+                compile_emit(cs, 12, dest, val, 0);
             }
             break;
         }
         case KY_AST_EXPR_CALL: {
-            int fn_reg = dest;
-            compile_expression(cs, node->as.call.callee, fn_reg);
+            int tmp_reg = dest;
+            // 先编译参数，再编译callee，避免callee被覆盖
             int nargs = node->as.call.arg_count;
             for (int i = 0; i < nargs; i++) {
-                compile_expression(cs, node->as.call.args[i], fn_reg + 1 + i);
+                compile_expression(cs, node->as.call.args[i], tmp_reg + 1 + i);
             }
-            compile_emit(cs, 41, fn_reg, nargs + 1, 0);
+            // callee编译到dest，此时参数已在tmp_reg+1处，不会被覆盖
+            compile_expression(cs, node->as.call.callee, tmp_reg);
+            compile_emit(cs, 41, tmp_reg, nargs + 1, 0);
             break;
         }
         default:
