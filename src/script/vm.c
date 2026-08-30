@@ -134,12 +134,25 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
     for (int i = 0; i < locals_count && i < argc; i++) {
         vm->stack[base + i] = args[i];
     }
+    fprintf(stderr, "=== '%s': %d ints ===\n", proto->name ? proto->name : "?", proto->code_count);
+    for (int i = 0; i < proto->code_count && i < 20; i++) {
+        fprintf(stderr, "  code[%d]=%d ", i, proto->code[i]);
+        if ((i+1) % 4 == 0) fprintf(stderr, "\n");
+    }
+    fprintf(stderr, "VM executing...\n");
     while (pc + 3 < proto->code_count) {
         int opcode = proto->code[pc];
         int A = proto->code[pc + 1];
         int B = proto->code[pc + 2];
         int C = proto->code[pc + 3];
         pc += 4;
+        const char *opname = "?";
+        if(opcode==0)opname="NIL";else if(opcode==5)opname="MOVE";
+        else if(opcode==6)opname="ADD";else if(opcode==7)opname="SUB";
+        else if(opcode==2)opname="INT";else if(opcode==17)opname="LE";
+        else if(opcode==52)opname="JMPIFNOT";else if(opcode==50)opname="JMP";
+        else if(opcode==43)opname="RET";
+        fprintf(stderr, "  [%d] %s A=%d B=%d C=%d\n", pc/4-1, opname, A, B, C);
         switch (opcode) {
             case OP_LOADNIL:
                 vm->stack[base + A] = nil_val();
@@ -262,6 +275,7 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
             }
             case OP_RETURN: {
                 kyValue ret = vm->stack[base + A];
+                fprintf(stderr, "  RET type=%d\n", ret.type);
                 vm->stack_top = saved_top;
                 return ret;
             }
@@ -544,7 +558,8 @@ static void compile_statement(kyCompileState *cs, kyAstNode *stmt) {
                 if (stmt->as.for_stmt.inc) {
                     compile_expression(cs, stmt->as.for_stmt.inc, 0);
                 }
-                compile_emit(cs, 50, 0, loop_start - cs->code_count, 0);
+                int jump_offset = loop_start - cs->code_count;
+                compile_emit(cs, 50, 0, jump_offset, 0);
                 cs->code[jmp_idx] = cs->code_count - jmp_idx;
             }
             break;
@@ -567,7 +582,7 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
         case KY_AST_EXPR_LITERAL: {
             kyToken *t = &node->as.literal.tok;
             if (t->kind == KYX_TK_INT_LIT) {
-                compile_emit(cs, 6, dest, (int)t->as.ival, 0);
+                compile_emit(cs, 2, dest, (int)t->as.ival, 0);
             } else if (t->kind == KYX_TK_FLOAT_LIT) {
                 int c = compile_add_const(cs, t->as.fval);
                 compile_emit(cs, 9, dest, c, 0);
