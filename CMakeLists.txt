@@ -67,4 +67,14 @@ if(KYR_BUILD_TESTS)
   add_executable(ky_test_script tests/test_script.c)
   target_link_libraries(ky_test_script PRIVATE ky_engine)
   add_test(NAME script COMMAND ky_test_script)
+
+  add_executable(ky_test_editor tests/test_editor.c)
+  target_link_libraries(ky_test_editor PRIVATE ky_editor)
+  add_test(NAME editor COMMAND ky_test_editor)
+endif()
+
+# 编辑器模块（可选）
+option(KYR_BUILD_EDITOR "Build ImGui editor" ON)
+if(KYR_BUILD_EDITOR)
+  add_subdirectory(tools/editor)
 endif()
