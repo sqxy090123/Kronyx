@@ -80,3 +80,22 @@ ctest --test-dir build --output-on-failure
 - [ ] 13 tests failing due to return value type mismatch
 - [ ] Bytecode compilation for loops/conditions needs review
 - [ ] Some switch statement references need cleanup
+
+## P4 Script VM Final Status (2026-08-30)
+### Summary:
+- VM bytecode execution is working (no infinite loops)
+- Test suite completes in ~0.05s
+- 93/106 tests passing (88%)
+- Remaining 13 failures are type mismatch issues (INT vs FLOAT returns)
+
+### Key Fixes Applied:
+1. Fixed VM bytecode reading (kyInstr struct vs int array alignment)
+2. Fixed JMPIF/JMPIFNOT jump offsets
+3. Fixed binop opcode offsets (+ -> OP_ADD=6, etc.)
+4. Fixed int literal compilation (OP_LOADINT=2 not OP_ADD=6)
+5. Fixed ky_vm_call to properly dispatch to call_proto
+6. Restored full VM implementation from earlier commit
+
+### Known Issues:
+- Loop bytecode generation may have offset calculation errors
+- Return value type conversion needs review
