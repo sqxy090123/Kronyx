@@ -67,3 +67,16 @@ cmake --build build -j2
 # Test
 ctest --test-dir build --output-on-failure
 ```
+
+## P4 Script VM Final Summary (2026-08-30)
+### Completed Fixes:
+- [x] Fixed VM infinite loop by correcting bytecode reading
+- [x] Fixed JMPIF/JMPIFNOT jump offsets (4 ints per instruction)
+- [x] Fixed binop opcode offsets (+->6, -->7, etc.)
+- [x] Test suite completes in 0.06s (was hanging indefinitely)
+- [x] 93/106 tests passing (88%)
+
+### Remaining Issues:
+- [ ] 13 tests failing due to return value type mismatch
+- [ ] Bytecode compilation for loops/conditions needs review
+- [ ] Some switch statement references need cleanup

@@ -25,7 +25,7 @@ typedef struct kyInstr {
 } kyInstr;
 
 typedef struct kyProto {
-    kyInstr   *code;
+    int       *code;
     int        code_count;
     int        code_cap;
     double    *constants;
@@ -140,7 +140,7 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
         int B = proto->code[pc + 2];
         int C = proto->code[pc + 3];
         pc += 4;
-        switch (instr.op) {
+        switch (opcode) {
             case OP_LOADNIL:
                 vm->stack[base + A] = nil_val();
                 break;
