@@ -134,9 +134,12 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
     for (int i = 0; i < locals_count && i < argc; i++) {
         vm->stack[base + i] = args[i];
     }
-    while (pc < proto->code_count) {
-        kyInstr instr = proto->code[pc++];
-        int A = instr.A, B = instr.B, C = instr.C;
+    while (pc + 3 < proto->code_count) {
+        int opcode = proto->code[pc];
+        int A = proto->code[pc + 1];
+        int B = proto->code[pc + 2];
+        int C = proto->code[pc + 3];
+        pc += 4;
         switch (instr.op) {
             case OP_LOADNIL:
                 vm->stack[base + A] = nil_val();
@@ -234,10 +237,10 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                 break;
             }
             case OP_JMPIF:
-                if (!vm->stack[base + A].as.ival) pc++;
+                if (!vm->stack[base + A].as.ival) pc += 4;
                 break;
             case OP_JMPIFNOT:
-                if (vm->stack[base + A].as.ival) pc++;
+                if (vm->stack[base + A].as.ival) pc += 4;
                 break;
             case OP_JUMP:
                 pc += B;
@@ -596,15 +599,15 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
             int rhs = (lhs == dest) ? (dest + 1) : dest;
             compile_expression(cs, node->as.binop.right, rhs);
             if (strcmp(node->as.binop.op, "+") == 0) {
-                compile_emit(cs, 7, dest, lhs, rhs);
+                compile_emit(cs, 6, dest, lhs, rhs);
             } else if (strcmp(node->as.binop.op, "-") == 0) {
-                compile_emit(cs, 8, dest, lhs, rhs);
+                compile_emit(cs, 7, dest, lhs, rhs);
             } else if (strcmp(node->as.binop.op, "*") == 0) {
-                compile_emit(cs, 9, dest, lhs, rhs);
+                compile_emit(cs, 8, dest, lhs, rhs);
             } else if (strcmp(node->as.binop.op, "/") == 0) {
-                compile_emit(cs, 10, dest, lhs, rhs);
+                compile_emit(cs, 9, dest, lhs, rhs);
             } else if (strcmp(node->as.binop.op, "%") == 0) {
-                compile_emit(cs, 11, dest, lhs, rhs);
+                compile_emit(cs, 10, dest, lhs, rhs);
             } else if (strcmp(node->as.binop.op, "==") == 0) {
                 compile_emit(cs, 14, dest, lhs, rhs);
             } else if (strcmp(node->as.binop.op, "!=") == 0) {
