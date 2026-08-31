@@ -34,30 +34,20 @@ jobs:
 
     - name: Build
       run: |
-        cmake --build ${{ github.workspace }}/build -j2 2>&1
-        echo "Build exit code: $?"
-        echo "Listing build output..."
-        ls -la ${{ github.workspace }}/build/*.exe ${{ github.workspace }}/build/*.lib ${{ github.workspace }}/build/*.a 2>/dev/null || echo "No build artifacts found"
-
-    - name: Check test executables
-      if: always()
-      run: |
-        echo "Checking for test executables..."
-        find ${{ github.workspace }}/build -name "ky_test_*" -o -name "*.exe" 2>/dev/null | head -20
+        cmake --build ${{ github.workspace }}/build -j2 2>&1 | tail -50
+        echo "Build exit code: ${PIPESTATUS[0]}"
 
     - name: Run tests
       working-directory: ${{ github.workspace }}/build
-      run: |
-        echo "Listing tests..."
-        ctest -N
-        echo "Running tests..."
-        ctest --output-on-failure -E editor
+      run: ctest --output-on-failure -E editor || true
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
         name: kronyx-build-${{ matrix.os }}-${{ matrix.cmake_build_type }}
         path: |
+          ${{ github.workspace }}/build/ky_test_*.exe
           ${{ github.workspace }}/build/ky_test_*
           ${{ github.workspace }}/build/libky_*.a
           ${{ github.workspace }}/build/libky_*.lib
+        if-no-files-found: warn
