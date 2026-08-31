@@ -20,14 +20,20 @@ include_directories(${IMGUI_INCLUDE_DIRS})
 include_directories(${GLFW_INCLUDE_DIRS})
 include_directories(${OPENGL_INCLUDE_DIRS})
 
-# 编辑器源文件
-set(EDITOR_SOURCES
+# 编辑器C++源文件（包括ImGui的C++代码）
+set(EDITOR_CPP_SOURCES
     src/editor.c
     src/editor_main.c
+    src/viewport_panel.cpp
+    src/hierarchy_panel.cpp
+    src/properties_panel.cpp
+    src/console_panel.cpp
 )
 
 # 编辑器C++源文件
 set(EDITOR_CPP_SOURCES
+    src/editor.c
+    src/editor_main.c
     src/viewport_panel.cpp
     src/hierarchy_panel.cpp
     src/properties_panel.cpp
@@ -55,6 +61,11 @@ target_link_libraries(kronyx_editor PRIVATE
     ${OPENGL_LIBRARIES}
     OpenGL::GL
 )
+
+# 确保C和C++正确链接
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_link_libraries(kronyx_editor PUBLIC stdc++)
+endif()
 
 # 链接GLM（用于矩阵运算）
 find_package(glm QUIET)

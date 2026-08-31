@@ -174,6 +174,4 @@ static const kyEditorPanelVtbl properties_panel_vtbl = {
     .reserved = {0}
 };
 
-KY_API kyEditorPanel *ky_editor_panel_create_properties(void) {
-    return ky_editor_panel_create(&properties_panel_vtbl, nullptr);
-}
+/* 函数实现移至 editor.c */

@@ -236,6 +236,4 @@ static const kyEditorPanelVtbl viewport_panel_vtbl = {
     .reserved = {0}
 };
 
-KY_API kyEditorPanel *ky_editor_panel_create_viewport(void) {
-    return ky_editor_panel_create(&viewport_panel_vtbl, nullptr);
-}
+/* 函数实现移至 editor.c */

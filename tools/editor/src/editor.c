@@ -432,3 +432,169 @@ const char *ky_editor_get_backend_name(const kyEditor *editor) {
         default: return "none";
     }
 }
+
+/* ============================================
+ * 内置面板实现
+ * ============================================ */
+
+/* 面板初始化函数 */
+static void viewport_panel_init(kyEditorPanel *panel, void *user) {
+    KY_UNUSED(user);
+    panel->is_active = true;
+    panel->is_minimized = false;
+}
+
+static void hierarchy_panel_init(kyEditorPanel *panel, void *user) {
+    KY_UNUSED(user);
+    panel->is_active = true;
+    panel->is_minimized = false;
+}
+
+static void properties_panel_init(kyEditorPanel *panel, void *user) {
+    KY_UNUSED(user);
+    panel->is_active = true;
+    panel->is_minimized = false;
+}
+
+static void console_panel_init(kyEditorPanel *panel, void *user) {
+    KY_UNUSED(user);
+    panel->is_active = true;
+    panel->is_minimized = false;
+}
+
+/* 面板销毁函数 */
+static void viewport_panel_destroy(kyEditorPanel *panel) {
+    KY_UNUSED(panel);
+}
+
+static void hierarchy_panel_destroy(kyEditorPanel *panel) {
+    KY_UNUSED(panel);
+}
+
+static void properties_panel_destroy(kyEditorPanel *panel) {
+    KY_UNUSED(panel);
+}
+
+static void console_panel_destroy(kyEditorPanel *panel) {
+    KY_UNUSED(panel);
+}
+
+/* 面板更新函数 */
+static void viewport_panel_update(kyEditorPanel *panel, float dt) {
+    KY_UNUSED(panel);
+    KY_UNUSED(dt);
+}
+
+static void hierarchy_panel_update(kyEditorPanel *panel, float dt) {
+    KY_UNUSED(panel);
+    KY_UNUSED(dt);
+}
+
+static void properties_panel_update(kyEditorPanel *panel, float dt) {
+    KY_UNUSED(panel);
+    KY_UNUSED(dt);
+}
+
+static void console_panel_update(kyEditorPanel *panel, float dt) {
+    KY_UNUSED(panel);
+    KY_UNUSED(dt);
+}
+
+/* 面板绘制函数 */
+static void viewport_panel_draw(kyEditorPanel *panel) {
+    KY_UNUSED(panel);
+}
+
+static void hierarchy_panel_draw(kyEditorPanel *panel) {
+    KY_UNUSED(panel);
+}
+
+static void properties_panel_draw(kyEditorPanel *panel) {
+    KY_UNUSED(panel);
+}
+
+static void console_panel_draw(kyEditorPanel *panel) {
+    KY_UNUSED(panel);
+}
+
+/* 面板切换函数 */
+static void viewport_panel_toggle(kyEditorPanel *panel, bool *minimized) {
+    KY_UNUSED(panel);
+    KY_UNUSED(minimized);
+}
+
+static void hierarchy_panel_toggle(kyEditorPanel *panel, bool *minimized) {
+    KY_UNUSED(panel);
+    KY_UNUSED(minimized);
+}
+
+static void properties_panel_toggle(kyEditorPanel *panel, bool *minimized) {
+    KY_UNUSED(panel);
+    KY_UNUSED(minimized);
+}
+
+static void console_panel_toggle(kyEditorPanel *panel, bool *minimized) {
+    KY_UNUSED(panel);
+    KY_UNUSED(minimized);
+}
+
+/* 视口面板虚表 */
+static const kyEditorPanelVtbl viewport_panel_vtbl = {
+    .name = "Viewport",
+    .icon = "◻",
+    .init = viewport_panel_init,
+    .destroy = viewport_panel_destroy,
+    .update = viewport_panel_update,
+    .draw = viewport_panel_draw,
+    .toggle = viewport_panel_toggle
+};
+
+/* 层次面板虚表 */
+static const kyEditorPanelVtbl hierarchy_panel_vtbl = {
+    .name = "Hierarchy",
+    .icon = "◷",
+    .init = hierarchy_panel_init,
+    .destroy = hierarchy_panel_destroy,
+    .update = hierarchy_panel_update,
+    .draw = hierarchy_panel_draw,
+    .toggle = hierarchy_panel_toggle
+};
+
+/* 属性面板虚表 */
+static const kyEditorPanelVtbl properties_panel_vtbl = {
+    .name = "Properties",
+    .icon = "⚙",
+    .init = properties_panel_init,
+    .destroy = properties_panel_destroy,
+    .update = properties_panel_update,
+    .draw = properties_panel_draw,
+    .toggle = properties_panel_toggle
+};
+
+/* 控制台面板虚表 */
+static const kyEditorPanelVtbl console_panel_vtbl = {
+    .name = "Console",
+    .icon = "▢",
+    .init = console_panel_init,
+    .destroy = console_panel_destroy,
+    .update = console_panel_update,
+    .draw = console_panel_draw,
+    .toggle = console_panel_toggle
+};
+
+/* 创建内置面板 */
+kyEditorPanel *ky_editor_panel_create_viewport(void) {
+    return ky_editor_panel_create(&viewport_panel_vtbl, NULL);
+}
+
+kyEditorPanel *ky_editor_panel_create_hierarchy(void) {
+    return ky_editor_panel_create(&hierarchy_panel_vtbl, NULL);
+}
+
+kyEditorPanel *ky_editor_panel_create_properties(void) {
+    return ky_editor_panel_create(&properties_panel_vtbl, NULL);
+}
+
+kyEditorPanel *ky_editor_panel_create_console(void) {
+    return ky_editor_panel_create(&console_panel_vtbl, NULL);
+}

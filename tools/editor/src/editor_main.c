@@ -156,6 +156,13 @@ static bool init_editor(EditorApp *app) {
     
     printf("Render backend: %s\n", ky_rd_backend_name(app->render_device));
     
+    /* 初始化 ImGui - 临时注释 */
+    // TODO: 修复ImGui集成
+    // ImGui::CreateContext();
+    // ImGui_ImplGlfw_InitForOpenGL(app->window, true);
+    // ImGui_ImplOpenGL3_Init("#version 330 core");
+    // ImGui::StyleColorsDark();
+    
     /* 创建网格着色器 */
     kyShaderSource shader_src = {
         .vs = grid_vs_source,
@@ -267,6 +274,12 @@ static void cleanup_editor(EditorApp *app) {
         app->render_device = NULL;
     }
     
+    /* 清理 ImGui - 临时注释 */
+    // TODO: 修复ImGui清理
+    // ImGui_ImplOpenGL3_Shutdown();
+    // ImGui_ImplGlfw_Shutdown();
+    // ImGui::DestroyContext();
+    
     /* 清理窗口 */
     if (app->window) {
         glfwDestroyWindow(app->window);
@@ -321,8 +334,14 @@ static void run_editor(EditorApp *app) {
     
     while (app->running) {
         double current_time = glfwGetTime();
-        float dt = (float)(current_time - app->last_time);
-        app->last_time = current_time;
+        float dt = (float)(current_time - last_time);
+        last_time = current_time;
+        
+        /* 开始 ImGui 帧 - 临时注释 */
+        // TODO: 修复ImGui集成
+        // ImGui_ImplOpenGL3_NewFrame();
+        // ImGui_ImplGlfw_NewFrame();
+        // ImGui::NewFrame();
         
         /* 检查事件 */
         if (glfwWindowShouldClose(app->window)) {
@@ -341,6 +360,9 @@ static void run_editor(EditorApp *app) {
         
         /* 渲染场景 */
         render_scene(app);
+        
+        /* 交换缓冲区 */
+        glfwSwapBuffers(app->window);
         
         /* 交换缓冲区 */
         glfwSwapBuffers(app->window);
