@@ -1,12 +1,5 @@
 #include "kronyx/editor.h"
 
-/* 完整定义kyEditorConfig结构体（避免不完整typedef错误） */
-struct kyEditorConfig {
-    int vsync;
-    int log_level;
-    void *reserved[64];
-};
-
 /* 完整定义kyEditorHooks结构体（避免不完整typedef错误） */
 struct kyEditorHooks {
     struct {

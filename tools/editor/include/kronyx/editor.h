@@ -27,7 +27,11 @@ typedef enum kyEditorCompatibility {
 /* ============================================
  * 编辑器配置结构（可扩展）
  * ============================================ */
-typedef struct kyEditorConfig kyEditorConfig;
+typedef struct kyEditorConfig {
+    int vsync;               /* 垂直同步: 0=off, 1=on */
+    int log_level;           /* 日志级别: 0=ERROR, 1=WARNING, 2=INFO, 3=DEBUG */
+    void *reserved[64];      /* 预留扩展字段 */
+} kyEditorConfig;
 
 KY_API kyEditorConfig *ky_editor_config_create(void);
 KY_API void ky_editor_config_destroy(kyEditorConfig *cfg);
@@ -160,6 +164,12 @@ struct kyEditorPanel {
 KY_API kyEditorPanel *ky_editor_panel_create(const kyEditorPanelVtbl *vtbl, void *user);
 KY_API void ky_editor_panel_destroy(kyEditorPanel *panel);
 
+/* 创建内置面板 */
+KY_API kyEditorPanel *ky_editor_panel_create_viewport(void);
+KY_API kyEditorPanel *ky_editor_panel_create_hierarchy(void);
+KY_API kyEditorPanel *ky_editor_panel_create_properties(void);
+KY_API kyEditorPanel *ky_editor_panel_create_console(void);
+
 /* 更新面板 */
 KY_API void ky_editor_panel_update(kyEditorPanel *panel, float dt);
 
@@ -210,6 +220,13 @@ KY_API void ky_editor_plugin_unregister_all(kyEditor *editor);
  * 工具函数（预留扩展）
  * ============================================ */
 KY_API bool ky_editor_is_valid(const kyEditor *editor);
+
+/* ============================================
+ * 控制台面板日志接口
+ * ============================================ */
+KY_API void ky_editor_console_info(kyEditorPanel *console, const char *msg, const char *file, int line);
+KY_API void ky_editor_console_warning(kyEditorPanel *console, const char *msg, const char *file, int line);
+KY_API void ky_editor_console_error(kyEditorPanel *console, const char *msg, const char *file, int line);
 
 /* ============================================
  * 回调类型定义（C++兼容）

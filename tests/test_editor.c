@@ -76,15 +76,22 @@ int main(void) {
 
     /* 测试编辑器创建（不运行） */
     printf("5. Testing editor creation...\n");
-    kyEditor *editor = ky_editor_create(cfg, KY_RENDERER_GL, NULL);
-    if (editor) {
-        printf("   ✓ Editor created successfully\n");
-        printf("   - Backend: %s\n", ky_editor_get_backend_name(editor));
-        printf("   - Valid: %s\n", ky_editor_is_valid(editor) ? "yes" : "no");
-        ky_editor_destroy(editor);
-        printf("   ✓ Editor destroyed\n\n");
+    kyEditorConfig *editor_cfg = ky_editor_config_create();
+    if (editor_cfg) {
+        kyEditor *editor = ky_editor_create(editor_cfg, KY_RENDERER_GL, NULL);
+        if (editor) {
+            printf("   ✓ Editor created successfully\n");
+            printf("   - Backend: %s\n", ky_editor_get_backend_name(editor));
+            printf("   - Valid: %s\n", ky_editor_is_valid(editor) ? "yes" : "no");
+            ky_editor_destroy(editor);
+            printf("   ✓ Editor destroyed\n\n");
+        } else {
+            ky_editor_config_destroy(editor_cfg);
+            printf("   ✗ Failed to create editor\n\n");
+            return 1;
+        }
     } else {
-        printf("   ✗ Failed to create editor\n\n");
+        printf("   ✗ Failed to create editor config\n\n");
         return 1;
     }
 

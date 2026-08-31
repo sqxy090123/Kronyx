@@ -31,26 +31,25 @@ set(EDITOR_HEADERS
 )
 
 # 创建静态库
-add_library(kronyx_editor STATIC ${EDITOR_SOURCES} ${EDITOR_CPP_SOURCES} ${EDITOR_HEADERS})
+add_library(ky_editor STATIC ${EDITOR_SOURCES} ${EDITOR_CPP_SOURCES} ${EDITOR_HEADERS})
 
 # 链接依赖
-target_link_libraries(kronyx_editor PRIVATE
-    kronyx_core
-    kronyx_script
-    kronyx_render
+target_link_libraries(ky_editor PRIVATE
+    ky_core
+    ky_engine
     ${IMGUI_LIBRARIES}
 )
 
-# 包含目录
-target_include_directories(kronyx_editor PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/include
-)
+if(UNIX)
+    target_link_libraries(ky_editor PUBLIC m)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_link_libraries(ky_editor PUBLIC stdc++)
+    endif()
+endif()
 
 # 包含目录
-target_include_directories(kronyx_editor PRIVATE
+target_include_directories(ky_editor PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
     ${CMAKE_SOURCE_DIR}/include
 )
 

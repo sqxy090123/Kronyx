@@ -1,6 +1,6 @@
 option(KYR_BUILD_TESTS "Build unit tests" ON)
 option(KYR_BUILD_DEMOS "Build demo games" ON)
-option(KYR_BUILD_EDITOR "Build ImGui editor" ON)
+option(KYR_BUILD_EDITOR "Build ImGui editor" OFF)
 option(KYR_BUILD_PYTHON "Build Python bindings" OFF)
 option(KYR_RENDERER_GL "Enable OpenGL backend" ON)
 option(KYR_RENDERER_VULKAN "Enable Vulkan backend" OFF)
