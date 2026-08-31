@@ -27,6 +27,16 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y libglfw3-dev libglm-dev libx11-dev libxi-dev libxrandr-dev libgl1-mesa-dev
 
+    - name: Install dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install glfw glm
+
+    - name: Install dependencies (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        choco install glfw3 glm -y
+
     - name: Configure CMake
       run: cmake -S ${{ github.workspace }} -B ${{ github.workspace }}/build -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }} -DKYR_BUILD_TESTS=ON
 
@@ -44,3 +54,4 @@ jobs:
         path: |
           ${{ github.workspace }}/build/ky_test_*
           ${{ github.workspace }}/build/libky_*.a
+          ${{ github.workspace }}/build/libky_*.lib
