@@ -40,12 +40,15 @@ jobs:
     - name: Run tests
       working-directory: ${{ github.workspace }}/build
       run: |
-        echo "Available tests:"
+        echo "Listing available tests..."
         ctest -N
-        echo "Running tests..."
-        ctest --output-on-failure --verbose || true
-        echo "Checking test executables..."
-        ls -la ky_test_* 2>/dev/null || echo "No test executables found"
+        echo "Running tests with timeout..."
+        timeout 60 ctest --output-on-failure --verbose || exit_code=$?
+        if [ "$exit_code" = "124" ]; then
+          echo "Test timeout detected"
+          exit 1
+        fi
+        exit ${exit_code:-0}
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
