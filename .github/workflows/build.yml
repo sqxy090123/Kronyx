@@ -39,14 +39,27 @@ jobs:
 
     - name: Run tests
       working-directory: ${{ github.workspace }}/build
+      shell: bash
       run: |
-        echo "Available executables:"
-        ls -la *.exe 2>/dev/null || ls -la *test* 2>/dev/null || echo "No test executables found"
-        echo "Running tests..."
-        ctest --output-on-failure || exit_code=$?
-        if [ "${exit_code:-0}" != "0" ]; then
-          echo "ctest failed with exit code ${exit_code:-unknown}"
-        fi
+        set -x
+        echo "=== Checking test executables ==="
+        ls -la ky_test_* 2>&1 || echo "No ky_test_* files found"
+        echo "=== Running individual tests ==="
+        for test in ky_test_core ky_test_math ky_test_ecs ky_test_render ky_test_physics ky_test_script; do
+          if [ -f "$test" ]; then
+            echo "Running $test..."
+            ./$test
+            result=$?
+            echo "$test exit code: $result"
+            if [ $result -ne 0 ]; then
+              echo "FAILED: $test"
+              exit $result
+            fi
+          else
+            echo "NOT FOUND: $test"
+          fi
+        done
+        echo "=== All tests passed ==="
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
