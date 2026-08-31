@@ -34,8 +34,16 @@ jobs:
 
     - name: Build
       run: |
-        cmake --build ${{ github.workspace }}/build -j2
+        cmake --build ${{ github.workspace }}/build -j2 2>&1
         echo "Build exit code: $?"
+        echo "Listing build output..."
+        ls -la ${{ github.workspace }}/build/*.exe ${{ github.workspace }}/build/*.lib ${{ github.workspace }}/build/*.a 2>/dev/null || echo "No build artifacts found"
+
+    - name: Check test executables
+      if: always()
+      run: |
+        echo "Checking for test executables..."
+        find ${{ github.workspace }}/build -name "ky_test_*" -o -name "*.exe" 2>/dev/null | head -20
 
     - name: Run tests
       working-directory: ${{ github.workspace }}/build
