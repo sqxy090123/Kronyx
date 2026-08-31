@@ -33,17 +33,13 @@ jobs:
     - name: Show CMake info
       run: |
         cmake --version
-        cmake -L ${{ github.workspace }}/build | head -20
-        echo "Generator: $(cmake --build ${{ github.workspace }}/build --verbose 2>&1 | head -3 || true)"
+        cmake -L ${{ github.workspace }}/build
+        echo "Generator: $(cmake --no-warn-unused-cli ${{ github.workspace }}/build -G 2>&1 || true)"
+        where cmake 2>/dev/null || which cmake
+        where cl 2>/dev/null || which gcc || which clang 2>/dev/null || echo "No C compiler found"
 
     - name: Build
-      run: cmake --build ${{ github.workspace }}/build -j2 --verbose
-      continue-on-error: true
-
-    - name: Check build output
-      run: |
-        ls -la ${{ github.workspace }}/build/
-        echo "Build completed with exit code $?"
+      run: cmake --build ${{ github.workspace }}/build -j2
 
     - name: Run tests
       working-directory: ${{ github.workspace }}/build
