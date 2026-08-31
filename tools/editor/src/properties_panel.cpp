@@ -62,17 +62,17 @@ public:
                         /* 位置 */
                         ImGui::Text("Position");
                         static float pos[3] = {0, 0, 0};
-                        ImGui::InputFloat3("##pos", pos, 3);
+                        ImGui::InputFloat3("##pos", pos);
                         
                         /* 旋转 */
                         ImGui::Text("Rotation");
                         static float rot[3] = {0, 0, 0};
-                        ImGui::InputFloat3("##rot", rot, 3);
+                        ImGui::InputFloat3("##rot", rot);
                         
                         /* 缩放 */
                         ImGui::Text("Scale");
                         static float scale[3] = {1, 1, 1};
-                        ImGui::InputFloat3("##scale", scale, 3);
+                        ImGui::InputFloat3("##scale", scale);
                         
                         ImGui::TreePop();
                     }

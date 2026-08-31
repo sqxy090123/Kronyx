@@ -31,8 +31,9 @@ public:
 
     ~ViewportPanel() {}
 
-    void init() {
-        /* 初始化逻辑 */
+    void init(void *user_data) {
+        /* 预留：从 user_data 获取渲染上下文 */
+        KY_UNUSED(user_data);
     }
 
     void destroy() {
@@ -76,7 +77,7 @@ public:
 
                 /* 绘制背景 */
                 ImDrawList* draw_list = ImGui::GetWindowDrawList();
-                draw_list->AddRectFilled(viewport_pos, viewport_pos + viewport_size, 
+                draw_list->AddRectFilled(viewport_pos, ImVec2(viewport_pos.x + viewport_size.x, viewport_pos.y + viewport_size.y), 
                     IM_COL32(32, 32, 32, 255));
 
                 /* 绘制网格 */
@@ -95,7 +96,7 @@ public:
                 }
 
                 /* 绘制十字准星 */
-                ImVec2 center = viewport_pos + viewport_size * 0.5f;
+                ImVec2 center = ImVec2(viewport_pos.x + viewport_size.x * 0.5f, viewport_pos.y + viewport_size.y * 0.5f);
                 float cross_size = 10.0f;
                 draw_list->AddLine(ImVec2(center.x - cross_size, center.y), 
                     ImVec2(center.x + cross_size, center.y), 
@@ -108,7 +109,7 @@ public:
                 char stats[128];
                 snprintf(stats, sizeof(stats), "W: %d H: %d | Zoom: %.1fx | Entity: 0x%08X",
                     width, height, zoom, selected_entity);
-                draw_list->AddText(viewport_pos + ImVec2(4, 4), 
+                draw_list->AddText(ImVec2(viewport_pos.x + 4, viewport_pos.y + 4), 
                     IM_COL32(200, 200, 200, 255), stats);
             }
         }
@@ -120,6 +121,16 @@ public:
         /* 预留：最小化切换 */
     }
 
+    void set_render_context(void *render_context) {
+        /* 预留：设置渲染上下文 */
+        KY_UNUSED(render_context);
+    }
+
+    void set_scene(void *scene) {
+        /* 预留：设置场景 */
+        KY_UNUSED(scene);
+    }
+
 private:
     void draw_grid(ImVec2 pos, ImVec2 size) {
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -127,7 +138,7 @@ private:
         int lines = 20;
         
         ImVec2 start = pos;
-        ImVec2 end = pos + size;
+        ImVec2 end = ImVec2(pos.x + size.x, pos.y + size.y);
         
         /* 垂直线 */
         for (int i = -lines; i <= lines; i++) {
@@ -148,25 +159,25 @@ private:
 
     void draw_axes(ImVec2 pos, ImVec2 size) {
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
-        ImVec2 center = pos + size * 0.5f;
+        ImVec2 center = ImVec2(pos.x + size.x * 0.5f, pos.y + size.y * 0.5f);
         float axis_len = 30.0f;
         
         /* X轴 - 红色 */
-        draw_list->AddLine(center, center + ImVec2(axis_len, 0), 
+        draw_list->AddLine(center, ImVec2(center.x + axis_len, center.y), 
             IM_COL32(255, 80, 80, 255), 2.0f);
-        draw_list->AddText(center + ImVec2(axis_len + 4, -8), 
+        draw_list->AddText(ImVec2(center.x + axis_len + 4, center.y - 8), 
             IM_COL32(255, 80, 80, 255), "X");
         
         /* Y轴 - 绿色 */
-        draw_list->AddLine(center, center + ImVec2(0, -axis_len), 
+        draw_list->AddLine(center, ImVec2(center.x, center.y - axis_len), 
             IM_COL32(80, 255, 80, 255), 2.0f);
-        draw_list->AddText(center + ImVec2(4, -axis_len - 4), 
+        draw_list->AddText(ImVec2(center.x + 4, center.y - axis_len - 4), 
             IM_COL32(80, 255, 80, 255), "Y");
         
         /* Z轴 - 蓝色 */
-        draw_list->AddLine(center, center + ImVec2(-axis_len * 0.5f, axis_len * 0.5f), 
+        draw_list->AddLine(center, ImVec2(center.x - axis_len * 0.5f, center.y + axis_len * 0.5f), 
             IM_COL32(80, 80, 255, 255), 2.0f);
-        draw_list->AddText(center + ImVec2(-axis_len * 0.5f - 12, axis_len * 0.5f + 4), 
+        draw_list->AddText(ImVec2(center.x - axis_len * 0.5f - 12, center.y + axis_len * 0.5f + 4), 
             IM_COL32(80, 80, 255, 255), "Z");
     }
 
@@ -191,7 +202,7 @@ static const kyEditorPanelVtbl viewport_panel_vtbl = {
     .init = [](kyEditorPanel *panel, void *user) -> void {
         KY_UNUSED(user);
         ViewportPanel *impl = new ViewportPanel();
-        impl->init();
+        impl->init(user);
         panel->impl = impl;
     },
     .destroy = [](kyEditorPanel *panel) -> void {
