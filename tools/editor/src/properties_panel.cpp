@@ -5,59 +5,101 @@
 #include <stdio.h>
 
 /* ============================================
- * 属性检查器面板实现（C++）
+ * 属性面板实现（C++）
  * ============================================ */
 class PropertiesPanel {
 public:
-    PropertiesPanel() : current_entity(0xFFFFFFFF), property_capacity(8) {
+    PropertiesPanel() : current_entity(0xFFFFFFFF), property_capacity(16) {
         properties = static_cast<Property*>(calloc(property_capacity, sizeof(Property)));
     }
 
     ~PropertiesPanel() {
+        for (size_t i = 0; i < property_count; i++) {
+            free((void *)properties[i].name);
+        }
         free(properties);
     }
 
-    void init() {
-        /* 初始化逻辑 */
-    }
-
-    void destroy() {
-        /* 清理逻辑 */
-    }
+    void init() {}
+    void destroy() {}
 
     void update(float dt) {
         KY_UNUSED(dt);
-        /* 更新逻辑 */
+    }
+
+    void add_property(const char *name, const char *label, void *value, size_t size, int type) {
+        if (property_count >= property_capacity) {
+            property_capacity *= 2;
+            properties = static_cast<Property*>(realloc(properties, property_capacity * sizeof(Property)));
+        }
+        properties[property_count].name = strdup(name);
+        properties[property_count].label = label;
+        properties[property_count].value = value;
+        properties[property_count].size = size;
+        properties[property_count].type = type;
+        property_count++;
+    }
+
+    void clear_properties() {
+        for (size_t i = 0; i < property_count; i++) {
+            free((void *)properties[i].name);
+        }
+        property_count = 0;
     }
 
     void draw() {
         if (ImGui::BeginChild("Properties", ImVec2(0, 0), true)) {
-            /* 预留：显示当前实体 */
-            if (current_entity != 0xFFFFFFFF) {
+            if (current_entity == 0xFFFFFFFF) {
+                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No entity selected");
+                ImGui::TextColored(ImVec4(0.4f, 0.4f, 0.4f, 1.0f), "Select an entity from Hierarchy");
+            } else {
                 char title[64];
                 snprintf(title, sizeof(title), "Entity: 0x%08X", current_entity);
+                
                 if (ImGui::CollapsingHeader(title)) {
-                    /* 预留：显示Transform组件 */
-                    /* if (has_component(current_entity, KY_COMPONENT_TRANSFORM)) { */
-                    /*     ImGui::Text("Transform"); */
-                    /*     if (ImGui::BeginTable("TransformProps", 2, ImGuiTableFlags_BordersInnerV)) { */
-                    /*         draw_transform_properties(current_entity); */
-                    /*         ImGui::EndTable(); */
-                    /*     } */
-                    /* } */
-
-                    /* 预留：显示RigidBody组件 */
-                    /* if (has_component(current_entity, KY_COMPONENT_RIGIDBODY)) { */
-                    /*     ImGui::Text("RigidBody"); */
-                    /*     if (ImGui::BeginTable("RigidBodyProps", 2, ImGuiTableFlags_BordersInnerV)) { */
-                    /*         draw_rigidbody_properties(current_entity); */
-                    /*         ImGui::EndTable(); */
-                    /*     } */
-                    /* } */
+                    /* Transform 组件 */
+                    if (ImGui::TreeNode("Transform")) {
+                        /* 位置 */
+                        ImGui::Text("Position");
+                        static float pos[3] = {0, 0, 0};
+                        ImGui::InputFloat3("##pos", pos, 3);
+                        
+                        /* 旋转 */
+                        ImGui::Text("Rotation");
+                        static float rot[3] = {0, 0, 0};
+                        ImGui::InputFloat3("##rot", rot, 3);
+                        
+                        /* 缩放 */
+                        ImGui::Text("Scale");
+                        static float scale[3] = {1, 1, 1};
+                        ImGui::InputFloat3("##scale", scale, 3);
+                        
+                        ImGui::TreePop();
+                    }
+                    
+                    /* RigidBody 组件 */
+                    if (ImGui::TreeNode("RigidBody")) {
+                        static bool dynamic = true;
+                        ImGui::Checkbox("Dynamic", &dynamic);
+                        
+                        static float mass = 1.0f;
+                        ImGui::SliderFloat("Mass", &mass, 0.1f, 100.0f);
+                        
+                        static float friction = 0.5f;
+                        ImGui::SliderFloat("Friction", &friction, 0.0f, 1.0f);
+                        
+                        static float restitution = 0.3f;
+                        ImGui::SliderFloat("Restitution", &restitution, 0.0f, 1.0f);
+                        
+                        ImGui::TreePop();
+                    }
+                    
+                    /* 预留：其他组件 */
+                    if (ImGui::TreeNode("Components")) {
+                        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Add components via Hierarchy");
+                        ImGui::TreePop();
+                    }
                 }
-            } else {
-                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No entity selected");
-                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Select an entity from Hierarchy");
             }
         }
         ImGui::EndChild();
@@ -65,26 +107,38 @@ public:
 
     void toggle(bool *minimized) {
         KY_UNUSED(minimized);
-        /* 预留：最小化切换 */
     }
 
-    uint32_t current_entity;
+    void set_entity(uint32_t entity) {
+        current_entity = entity;
+        clear_properties();
+        
+        if (entity != 0xFFFFFFFF) {
+            /* 预留：从ECS获取组件并添加到属性列表 */
+        }
+    }
+
+private:
     struct Property {
-        const char *name;
+        char *name;
         const char *label;
         void *value;
         size_t size;
         int type;
-    } *properties;
+    };
+    
+    uint32_t current_entity;
+    Property *properties;
     size_t property_count;
     size_t property_capacity;
 };
 
-/* 属性检查器面板虚表实现 */
+/* 属性面板虚表实现 */
 static const kyEditorPanelVtbl properties_panel_vtbl = {
     .name = "Properties",
-    .icon = "⚙",
+    .icon = "\xe2\x99\x99",  /* Gear icon */
     .init = [](kyEditorPanel *panel, void *user) -> void {
+        KY_UNUSED(user);
         PropertiesPanel *impl = new PropertiesPanel();
         impl->init();
         panel->impl = impl;
