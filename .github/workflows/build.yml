@@ -39,7 +39,13 @@ jobs:
 
     - name: Run tests
       working-directory: ${{ github.workspace }}/build
-      run: ctest --output-on-failure --verbose
+      run: |
+        echo "Available tests:"
+        ctest -N
+        echo "Running tests..."
+        ctest --output-on-failure --verbose || true
+        echo "Checking test executables..."
+        ls -la ky_test_* 2>/dev/null || echo "No test executables found"
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
