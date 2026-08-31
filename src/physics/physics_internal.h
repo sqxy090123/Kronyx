@@ -6,6 +6,7 @@
 #define KY_PHYSICS_MAX_COLLIDERS 512
 #define KY_PHYSICS_MAX_PAIRS 4096
 #define KY_PHYSICS_MAX_SAP_EVENTS 2048
+#define KY_PHYSICS_MAX_FORCE_FIELDS KY_FORCE_FIELD_MAX
 
 typedef struct kyPhysBody {
     kyRigidBody body;
@@ -32,6 +33,12 @@ typedef struct kyContactPair {
     int      alive;
 } kyContactPair;
 
+typedef struct kyPhysForceField {
+    kyForceField  field;
+    int           alive;
+    uint32_t      id;
+} kyPhysForceField;
+
 struct kyPhysicsWorld {
     kyAllocator     alloc;
     kyVec3          gravity;
@@ -45,6 +52,11 @@ struct kyPhysicsWorld {
     int             pair_count;
     uint32_t        next_body_id;
     uint32_t        next_collider_id;
+    
+    /* Force fields */
+    kyPhysForceField force_fields[KY_PHYSICS_MAX_FORCE_FIELDS];
+    int               force_field_count;
+    uint32_t          next_force_field_id;
 };
 
 static inline int sap_event_cmp(const void *a, const void *b) {
