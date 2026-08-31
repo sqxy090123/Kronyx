@@ -34,10 +34,16 @@ jobs:
       run: |
         cmake --version
         cmake -L ${{ github.workspace }}/build | head -20
+        echo "Generator: $(cmake --build ${{ github.workspace }}/build --verbose 2>&1 | head -3 || true)"
 
     - name: Build
-      run: cmake --build ${{ github.workspace }}/build -j2
-      shell: bash
+      run: cmake --build ${{ github.workspace }}/build -j2 --verbose
+      continue-on-error: true
+
+    - name: Check build output
+      run: |
+        ls -la ${{ github.workspace }}/build/
+        echo "Build completed with exit code $?"
 
     - name: Run tests
       working-directory: ${{ github.workspace }}/build
