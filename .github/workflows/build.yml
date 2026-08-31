@@ -37,10 +37,11 @@ jobs:
 
     - name: Build
       run: cmake --build ${{ github.workspace }}/build -j2
+      shell: bash
 
     - name: Run tests
       working-directory: ${{ github.workspace }}/build
-      run: ctest --output-on-failure
+      run: ctest --output-on-failure --verbose
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
