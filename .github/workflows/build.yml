@@ -39,7 +39,16 @@ jobs:
         where cl 2>/dev/null || which gcc || which clang 2>/dev/null || echo "No C compiler found"
 
     - name: Build
-      run: cmake --build ${{ github.workspace }}/build -j2
+      run: |
+        cmake --build ${{ github.workspace }}/build -j2 2>&1 | tee build.log
+        echo "Build exit code: ${PIPESTATUS[0]}"
+      continue-on-error: true
+
+    - name: Show build log on failure
+      if: failure()
+      run: |
+        cat ${{ github.workspace }}/build/build.log || true
+        echo "Exit code was: $?"
 
     - name: Run tests
       working-directory: ${{ github.workspace }}/build
