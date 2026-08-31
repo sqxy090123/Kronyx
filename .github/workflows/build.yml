@@ -30,6 +30,11 @@ jobs:
     - name: Configure CMake
       run: cmake -S ${{ github.workspace }} -B ${{ github.workspace }}/build -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }} -DKYR_BUILD_TESTS=ON
 
+    - name: Show CMake info
+      run: |
+        cmake --version
+        cmake -L ${{ github.workspace }}/build | head -20
+
     - name: Build
       run: cmake --build ${{ github.workspace }}/build -j2
 
