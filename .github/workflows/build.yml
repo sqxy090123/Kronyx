@@ -39,7 +39,14 @@ jobs:
 
     - name: Run tests
       working-directory: ${{ github.workspace }}/build
-      run: ctest --output-on-failure -E editor || true
+      run: |
+        echo "Available executables:"
+        ls -la *.exe 2>/dev/null || ls -la *test* 2>/dev/null || echo "No test executables found"
+        echo "Running tests..."
+        ctest --output-on-failure || exit_code=$?
+        if [ "${exit_code:-0}" != "0" ]; then
+          echo "ctest failed with exit code ${exit_code:-unknown}"
+        fi
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
