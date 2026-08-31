@@ -40,20 +40,10 @@ jobs:
     - name: Run tests
       working-directory: ${{ github.workspace }}/build
       run: |
-        echo "Running individual tests..."
-        for test in ky_test_core ky_test_math ky_test_ecs ky_test_render ky_test_physics ky_test_script; do
-          if [ -f "$test" ]; then
-            echo "Running $test..."
-            ./$test || exit_code=$?
-            if [ "$exit_code" != "0" ]; then
-              echo "Test $test failed with exit code $exit_code"
-              exit $exit_code
-            fi
-          else
-            echo "Test $test not found"
-          fi
-        done
-        echo "All tests passed!"
+        echo "Listing tests..."
+        ctest -N
+        echo "Running tests..."
+        ctest --output-on-failure -E editor
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
