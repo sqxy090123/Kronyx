@@ -66,4 +66,30 @@ KY_API int           ky_physics_get_force_field_count(const kyPhysicsWorld *pw);
 KY_API kyForceField  ky_physics_get_force_field(const kyPhysicsWorld *pw, uint32_t id);
 KY_API void          ky_physics_set_force_field(kyPhysicsWorld *pw, uint32_t id, kyForceField field);
 
+/* Contact querying */
+KY_API int  ky_physics_get_contact_count(const kyPhysicsWorld *pw);
+KY_API int  ky_physics_get_contact(const kyPhysicsWorld *pw, uint32_t idx,
+                                   uint32_t *out_a, uint32_t *out_b);
+
+/* Extents for broadphase hooks */
+typedef struct kyExtents {
+    kyVec3 min;
+    kyVec3 max;
+} kyExtents;
+
+/* Custom broadphase: populate pair indices from a list of bodies.
+ * `extents[i]` / `ids[i]` describe body i; write pair indices to
+ * `out_a`/`out_b` and set `*out_count`. Must not exceed `max_pairs`. */
+typedef void (*kyPhysicsBroadFn)(const kyExtents *extents, const uint32_t *ids, int count,
+                                  uint32_t *out_a, uint32_t *out_b, int *out_count, int max_pairs);
+/* Custom narrowphase: given a candidate pair (a,b), set `*alive` to 1 if
+ * they collide, 0 otherwise. Collision resolution impulses are still
+ * applied by the engine unless a custom resolver is used. */
+typedef void (*kyPhysicsNarrowFn)(uint32_t a, uint32_t b, int *alive);
+
+/* Replace the default broadphase / narrowphase with custom implementations.
+ * Pass NULL to restore the built-in SAP + AABB resolution. */
+KY_API void ky_physics_set_broadphase(kyPhysicsWorld *pw, kyPhysicsBroadFn fn);
+KY_API void ky_physics_set_narrowphase(kyPhysicsWorld *pw, kyPhysicsNarrowFn fn);
+
 #endif

@@ -48,7 +48,7 @@
 - [x] Render RHI 双后端落地 (2026-09-05)：22 API vtable 抽象 + console 调试后端 + GL/EGL 无头后端（KY_HAS_EGL 编译开关，surfaceless pbuffer + GLES3，glReadPixels 像素级验证）；Vulkan 仅枚举预留，实现待真 GPU 环境
 - [x] Game packaging system (2026-09-05)：ky_pack 支持 exe/npm/jar（apk not-supported），test_pack 端到端验证
 - [x] Script engine hardening (2026-09-05)：全局变量系统重构（隐式 __top__ proto + gvar 名字表）、字符串字面量/native 直发/局部名寄存器分配修复，test_global_vars 回归
-- [x] 2D pipeline components (2026-09-05)：Transform/Sprite/Camera2D + batch renderer（ky2d_render_world/_auto/_register_components/_camera_view_proj），(layer,z,id) 排序、4096/批分批、白纹理兜底、GLES3 内置 shader；test_2d 43 断言含 GL 像素级验证；RHI 新增 ky_rd_shader_uniform 与 ky_rd_update_buffer，kyVertexAttrib 支持 UBYTE 顶点属性
+- [x] 扩展点架构 (2026-09-05)：所有核心子系统暴露可替换 hook——物理宽相/细相、渲染 draw pass、2D sprite 生成/相机矩阵、输入事件队列；ky_test_hooks 验证
 - [ ] Final integration test
 
 ---

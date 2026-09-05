@@ -24,6 +24,8 @@ add_library(ky_core STATIC
   src/core/string.c
   src/core/log.c
   src/core/time.c
+  src/core/event.c
+  src/core/input.c
 )
 target_include_directories(ky_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 if(UNIX)
@@ -94,6 +96,18 @@ if(KYR_BUILD_TESTS)
   add_executable(ky_test_2d tests/test_2d.c)
   target_link_libraries(ky_test_2d PRIVATE ky_engine)
   add_test(NAME 2d COMMAND ky_test_2d)
+
+  add_executable(ky_test_hooks tests/test_hooks.c)
+  target_link_libraries(ky_test_hooks PRIVATE ky_engine ky_core)
+  add_test(NAME hooks COMMAND ky_test_hooks)
+
+  add_executable(ky_test_event tests/test_event.c)
+  target_link_libraries(ky_test_event PRIVATE ky_core)
+  add_test(NAME event COMMAND ky_test_event)
+
+  add_executable(ky_test_input tests/test_input.c)
+  target_link_libraries(ky_test_input PRIVATE ky_core)
+  add_test(NAME input COMMAND ky_test_input)
 endif()
 
 # 编辑器模块（可选）

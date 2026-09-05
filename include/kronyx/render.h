@@ -96,4 +96,12 @@ KY_API void     ky_rd_submit(kyRenderDevice *rd, void *cl);
 KY_API void     ky_rd_present(kyRenderDevice *rd);
 KY_API void     ky_rd_clear(kyRenderDevice *rd, kyVec4 clear_color, float clear_depth);
 
+/* Draw-pass hook: when non-NULL, called instead of the backend's submit
+ * during ky_rd_submit().  Receive the raw cmd-list pointer so extensions
+ * can cast to their own backend-specific type.  Set via
+ * ky_rd_set_draw_pass().  Pass NULL to restore the built-in backend draw. */
+typedef void (*kyDrawPassFn)(kyRenderDevice *rd, void *cmdlist, void *user);
+
+KY_API void ky_rd_set_draw_pass(kyRenderDevice *rd, kyDrawPassFn fn, void *user);
+
 #endif

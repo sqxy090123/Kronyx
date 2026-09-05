@@ -165,6 +165,7 @@ typedef struct ky2dCache {
 } ky2dCache;
 
 static ky2dCache g_cache;
+static ky2dContext g_ctx_default = {NULL, NULL, NULL};
 
 static void cache_destroy(void) {
     /* Cached resources are owned by their RenderDevice. The device may
@@ -318,19 +319,27 @@ static void emit_sprite(const ky2dItem *it, size_t base_vertex) {
 }
 
 /* Fill one batch of sprites into staging buffers; returns sprite count. */
-static size_t fill_batch(const ky2dItem *batch, size_t batch_count) {
+static size_t fill_batch(const ky2dItem *batch, size_t batch_count,
+                         const ky2dContext *ctx) {
     size_t n = 0;
     for (size_t s = 0; s < batch_count; s++) {
         size_t base_vertex = n * 4;
-        emit_sprite(&batch[s], base_vertex);
-        uint16_t base = (uint16_t)base_vertex;
-        uint16_t *idx = &g_ibo[n * 6];
-        idx[0] = base;
-        idx[1] = (uint16_t)(base + 1);
-        idx[2] = (uint16_t)(base + 2);
-        idx[3] = base;
-        idx[4] = (uint16_t)(base + 2);
-        idx[5] = (uint16_t)(base + 3);
+        if (ctx && ctx->sprite_gen) {
+            size_t vc = 0, ic = 0;
+            ctx->sprite_gen(&batch[s].tr, batch[s].sp,
+                            &g_vbo[base_vertex], &g_ibo[n * 6],
+                            &vc, &ic, ctx->user);
+            (void)vc; (void)ic;
+        } else {
+            emit_sprite(&batch[s], base_vertex);
+            uint16_t base = (uint16_t)base_vertex;
+            g_ibo[n * 6 + 0] = base;
+            g_ibo[n * 6 + 1] = (uint16_t)(base + 1);
+            g_ibo[n * 6 + 2] = (uint16_t)(base + 2);
+            g_ibo[n * 6 + 3] = base;
+            g_ibo[n * 6 + 4] = (uint16_t)(base + 2);
+            g_ibo[n * 6 + 5] = (uint16_t)(base + 3);
+        }
         n++;
     }
     return n;
@@ -384,14 +393,18 @@ static int collect(kyWorld *w, uint32_t tid_transform, uint32_t tid_sprite) {
 
 static int render_frame(kyRenderDevice *rd, kyWorld *w, const kyCamera2D *cam,
                         const kyTransform *cam_tr, uint32_t tid_transform,
-                        uint32_t tid_sprite) {
+                        uint32_t tid_sprite, const ky2dContext *ctx) {
     if (cache_init(rd) != 0) return -2;
 
     if (collect(w, tid_transform, tid_sprite) != 0) return -3;
 
     qsort(g_items, g_item_count, sizeof(ky2dItem), item_cmp);
 
-    kyMat4 vp_m = ky2d_camera_view_proj(cam, cam_tr);
+    kyMat4 vp_m;
+    if (ctx && ctx->camera_matrix)
+        vp_m = ctx->camera_matrix(cam, cam_tr, ctx->user);
+    else
+        vp_m = ky2d_camera_view_proj(cam, cam_tr);
 
     if (g_debug) {
         printf("[ky2d] frame: %zu sprites, clear=(%.2f,%.2f,%.2f,%.2f)\n",
@@ -419,7 +432,7 @@ static int render_frame(kyRenderDevice *rd, kyWorld *w, const kyCamera2D *cam,
             if (cur != tex) break;
             i++;
         }
-        size_t n = fill_batch(&g_items[start], i - start);
+        size_t n = fill_batch(&g_items[start], i - start, ctx);
         if (n == 0) continue;
 
         ky_rd_update_buffer(rd, g_cache.vbo, 0, n * 4 * sizeof(ky2dVertex), g_vbo);
@@ -477,7 +490,7 @@ int ky2d_render_world(kyRenderDevice *rd, kyWorld *w, kyEntity cam) {
                      : NULL;
     return render_frame(rd, w, c, cam_tr,
                         ct_transform ? ct_transform->type_id : 0,
-                        ct_sprite->type_id);
+                        ct_sprite->type_id, &g_ctx_default);
 }
 
 int ky2d_render_world_auto(kyRenderDevice *rd, kyWorld *w) {
@@ -508,4 +521,35 @@ int ky2d_render_world_auto(kyRenderDevice *rd, kyWorld *w) {
     }
     if (!found) return 0;
     return ky2d_render_world(rd, w, best);
+}
+
+ky2dContext ky2d_context_default(void) {
+    ky2dContext ctx = g_ctx_default;
+    return ctx;
+}
+
+int ky2d_render_with(kyRenderDevice *rd, kyWorld *w, kyEntity cam,
+                     const ky2dContext *ctx) {
+    if (!rd || !w || !ctx) return -1;
+    if (!ky_entity_valid(w, cam)) return -1;
+    const kyComponentType *ct_sprite = world_find_type(w, "sprite");
+    const kyComponentType *ct_transform = world_find_type(w, "transform");
+    const kyComponentType *ct_camera = world_find_type(w, "camera2d");
+    if (!ct_sprite || !ct_camera) {
+        ky_log_write(KY_LOG_ERROR, "2d: world lacks sprite/camera2d registration");
+        return -1;
+    }
+    const kyCamera2D *c =
+        (const kyCamera2D *)ky_world_get_component(w, cam, ct_camera->type_id);
+    if (!c) {
+        ky_log_write(KY_LOG_ERROR, "2d: entity %u has no camera2d", cam.id);
+        return -1;
+    }
+    if (c->viewport.x <= 0.0f || c->viewport.y <= 0.0f) return 0;
+    const kyTransform *cam_tr =
+        ct_transform ? (const kyTransform *)ky_world_get_component(w, cam, ct_transform->type_id)
+                     : NULL;
+    return render_frame(rd, w, c, cam_tr,
+                        ct_transform ? ct_transform->type_id : 0,
+                        ct_sprite->type_id, ctx);
 }

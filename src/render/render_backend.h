@@ -29,6 +29,13 @@ typedef void  (*kybe_draw_array_fn)(void *cl, uint32_t vertex_count, uint32_t in
 typedef void  (*kybe_submit_fn)(void *impl, void *cl);
 typedef void  (*kybe_present_fn)(void *impl);
 typedef void  (*kybe_clear_fn)(void *impl, kyVec4 color, float depth);
+typedef void  (*kybe_draw_pass_fn)(void *impl, const kyPipelineDesc *pd,
+                                   const kyBuffer *vb, uint32_t stride,
+                                   const kyBuffer *ib, uint32_t idx_size,
+                                   const void **textures, const void **uniforms,
+                                   const int *uniform_bytes, int tex_count,
+                                   kyPrimitiveTopology topo, uint32_t count,
+                                   uint32_t instances);
 
 typedef struct kyRenderBackend {
     kybe_create_fn           create;
@@ -62,6 +69,8 @@ struct kyRenderDevice {
     void *impl;
     const kyRenderBackend *vt;
     kyAllocator alloc;
+    kyDrawPassFn draw_pass_hook;
+    void *draw_pass_user;
 };
 
 extern const kyRenderBackend ky_backend_console;

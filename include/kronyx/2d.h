@@ -70,4 +70,28 @@ KY_API void ky2d_render_debug(int on);
  * entity's Transform; when present, cam pos/rotation offset by it. */
 KY_API kyMat4 ky2d_camera_view_proj(const kyCamera2D *cam, const kyTransform *tr);
 
+/* Per-frame sprite generation hook.  The extension writes vertex and index
+ * data into pre-allocated buffers (caller-provided).  Returns 0 on success.
+ * out_vert_count / out_idx_count receive the number of primitives produced.
+ * When NULL the built-in TRS-to-quad generator is used. */
+typedef int (*ky2dSpriteGenFn)(const kyTransform *tr, const kySprite *sp,
+                                void *out_verts, void *out_idx,
+                                size_t *out_vert_count, size_t *out_idx_count,
+                                void *user);
+/* Per-frame camera view-projection computation hook.  When NULL the
+ * built-in ortho projection is used. */
+typedef kyMat4 (*ky2dCameraMatrixFn)(const kyCamera2D *cam, const kyTransform *tr, void *user);
+
+/* Extensible render context.  Pass the address of a populated struct to
+ * ky2d_render_with(); the default context returned by
+ * ky2d_context_default() is used by ky2d_render_world / _auto. */
+typedef struct ky2dContext {
+    void *user;
+    ky2dSpriteGenFn sprite_gen;
+    ky2dCameraMatrixFn camera_matrix;
+} ky2dContext;
+
+KY_API ky2dContext ky2d_context_default(void);
+KY_API int ky2d_render_with(kyRenderDevice *rd, kyWorld *w, kyEntity cam, const ky2dContext *ctx);
+
 #endif

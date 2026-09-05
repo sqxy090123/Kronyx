@@ -145,6 +145,10 @@ void ky_cmd_draw_array(void *cl, uint32_t vertex_count, uint32_t instances) {
 
 void ky_rd_submit(kyRenderDevice *rd, void *cl) {
     if (!rd || !cl) return;
+    if (rd->draw_pass_hook) {
+        rd->draw_pass_hook(rd, cl, rd->draw_pass_user);
+        return;
+    }
     rd->vt->submit(rd->impl, cl);
 }
 
@@ -156,4 +160,10 @@ void ky_rd_present(kyRenderDevice *rd) {
 void ky_rd_clear(kyRenderDevice *rd, kyVec4 clear_color, float clear_depth) {
     if (!rd) return;
     rd->vt->clear(rd->impl, clear_color, clear_depth);
+}
+
+void ky_rd_set_draw_pass(kyRenderDevice *rd, kyDrawPassFn fn, void *user) {
+    if (!rd) return;
+    rd->draw_pass_hook = fn;
+    rd->draw_pass_user = user;
 }

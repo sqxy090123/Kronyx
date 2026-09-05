@@ -1,5 +1,6 @@
 #include "kronyx/physics.h"
 #include "physics_internal.h"
+#include "kronyx/event.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -188,11 +189,35 @@ void ky_physics_step(kyPhysicsWorld *pw, float dt) {
         phys_body_update_aabb(b, pw);
     }
 
-    /* SAP broadphase to find potential collision pairs */
-    sap_build_events(pw);
-    sap_find_pairs(pw);
+    /* SAP broadphase to find potential collision pairs (or use custom hook) */
+    if (pw->broad_fn) {
+        kyExtents exts[KY_PHYSICS_MAX_BODIES];
+        uint32_t ids[KY_PHYSICS_MAX_BODIES];
+        int n = 0;
+        for (int i = 0; i < pw->body_count; i++) {
+            if (!pw->bodies[i].alive) continue;
+            exts[n].min = pw->bodies[i].aabb_min;
+            exts[n].max = pw->bodies[i].aabb_max;
+            ids[n] = (uint32_t)(i + 1);
+            n++;
+        }
+        pw->pair_count = 0;
+        pw->broad_fn(exts, ids, n,
+                     &pw->pairs[0].body_a, &pw->pairs[0].body_b,
+                     &pw->pair_count, KY_PHYSICS_MAX_PAIRS);
+    } else {
+        sap_build_events(pw);
+        sap_find_pairs(pw);
+    }
 
     /* Narrow-phase: detect and resolve overlaps between collided bodies */
+    if (pw->narrow_fn) {
+        for (int i = 0; i < pw->pair_count; i++) {
+            int alive = 0;
+            pw->narrow_fn(pw->pairs[i].body_a, pw->pairs[i].body_b, &alive);
+            pw->pairs[i].alive = alive;
+        }
+    } else {
     for (int i = 0; i < pw->pair_count; i++) {
         kyContactPair *pair = &pw->pairs[i];
         if (!pair->alive) continue;
@@ -237,6 +262,17 @@ void ky_physics_step(kyPhysicsWorld *pw, float dt) {
             }
             phys_body_update_aabb(ba, pw);
         }
+    }
+    }
+
+    /* Emit collision events for each active contact pair.
+     * The event payload is a pointer to the internal contact; callers must
+     * copy any needed data immediately because pairs are invalidated on the
+     * next physics_step call. */
+    for (int i = 0; i < pw->pair_count; i++) {
+        const kyContactPair *p = &pw->pairs[i];
+        if (!p->alive) continue;
+        ky_event_trigger("collide", p);
     }
 }
 
@@ -332,4 +368,27 @@ void ky_physics_get_aabb(const kyPhysicsWorld *pw, uint32_t body_id,
     if (!b || !min_out || !max_out) return;
     *min_out = b->aabb_min;
     *max_out = b->aabb_max;
+}
+
+int ky_physics_get_contact_count(const kyPhysicsWorld *pw) {
+    return pw ? pw->pair_count : 0;
+}
+
+int ky_physics_get_contact(const kyPhysicsWorld *pw, uint32_t idx,
+                           uint32_t *out_a, uint32_t *out_b) {
+    if (!pw || idx >= (uint32_t)pw->pair_count) return 0;
+    const kyContactPair *p = &pw->pairs[idx];
+    if (out_a) *out_a = p->body_a;
+    if (out_b) *out_b = p->body_b;
+    return 1;
+}
+
+void ky_physics_set_broadphase(kyPhysicsWorld *pw, kyPhysicsBroadFn fn) {
+    if (!pw) return;
+    pw->broad_fn = fn;
+}
+
+void ky_physics_set_narrowphase(kyPhysicsWorld *pw, kyPhysicsNarrowFn fn) {
+    if (!pw) return;
+    pw->narrow_fn = fn;
 }

@@ -57,6 +57,12 @@ struct kyPhysicsWorld {
     kyPhysForceField force_fields[KY_PHYSICS_MAX_FORCE_FIELDS];
     int               force_field_count;
     uint32_t          next_force_field_id;
+
+    /* Custom collision hooks — when non-NULL, these override the built-in
+     * SAP broadphase (set_broadphase) and AABB narrowphase (set_narrowphase).
+     * When NULL the built-in implementations are used. */
+    kyPhysicsBroadFn  broad_fn;
+    kyPhysicsNarrowFn narrow_fn;
 };
 
 static inline int sap_event_cmp(const void *a, const void *b) {
