@@ -35,13 +35,31 @@ add_library(ky_engine STATIC
   src/scene/scene.c
   src/resource/resource.c
   src/render/render.c
+  src/render/console_backend.c
+  src/render/gl_backend.c
+  src/render/2d.c
   src/physics/physics.c
   src/physics/force_field.c
   src/script/script.c
   src/script/parser.c
   src/script/vm.c
+  src/pack/pack.c
 )
 target_link_libraries(ky_engine PUBLIC ky_core)
+target_compile_definitions(ky_engine PRIVATE KY_PACK_ENGINE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
+
+# 可选 EGL/GLES 硬件后端（无则 gl_backend 回落 stub）
+find_path(KY_EGL_INCLUDE_DIR EGL/egl.h)
+find_library(KY_EGL_LIBRARY EGL)
+find_library(KY_GLES_LIBRARY GLESv2)
+if(KY_EGL_INCLUDE_DIR AND KY_EGL_LIBRARY AND KY_GLES_LIBRARY)
+  target_compile_definitions(ky_engine PUBLIC KY_HAS_EGL=1)
+  target_include_directories(ky_engine PUBLIC ${KY_EGL_INCLUDE_DIR})
+  target_link_libraries(ky_engine PUBLIC ${KY_EGL_LIBRARY} ${KY_GLES_LIBRARY})
+  message(STATUS "Kronyx: EGL/GLES backend enabled")
+else()
+  message(STATUS "Kronyx: EGL/GLES not found, gl backend = stub")
+endif()
 
 if(KYR_BUILD_TESTS)
   enable_testing()
@@ -68,6 +86,14 @@ if(KYR_BUILD_TESTS)
   add_executable(ky_test_script tests/test_script.c)
   target_link_libraries(ky_test_script PRIVATE ky_engine)
   add_test(NAME script COMMAND ky_test_script)
+
+  add_executable(ky_test_pack tests/test_pack.c)
+  target_link_libraries(ky_test_pack PRIVATE ky_engine)
+  add_test(NAME pack COMMAND ky_test_pack)
+
+  add_executable(ky_test_2d tests/test_2d.c)
+  target_link_libraries(ky_test_2d PRIVATE ky_engine)
+  add_test(NAME 2d COMMAND ky_test_2d)
 endif()
 
 # 编辑器模块（可选）
@@ -77,6 +103,10 @@ if(KYR_BUILD_EDITOR)
   if(KYR_BUILD_TESTS)
     add_executable(ky_test_editor tests/test_editor.c)
     target_link_libraries(ky_test_editor PRIVATE ky_editor)
-    add_test(NAME editor COMMAND ky_test_editor)
-  endif()
+     add_test(NAME editor COMMAND ky_test_editor)
+   endif()
 endif()
+
+# Simple render demo
+add_executable(ky_test_render_demo tests/test_render_demo.c)
+target_link_libraries(ky_test_render_demo PRIVATE ky_engine)

@@ -2,16 +2,7 @@
 
 kyVec3 ky_quat_rotate(kyQuat q, kyVec3 v) {
     kyQuat p = {v.x, v.y, v.z, 0.0f};
-    kyQuat qi = ky_quat_conj(q);
-    kyQuat t;
-    t.x = q.w * p.x + q.x * p.w + q.y * p.z - q.z * p.y;
-    t.y = q.w * p.y - q.x * p.z + q.y * p.w + q.z * p.x;
-    t.z = q.w * p.z + q.x * p.y - q.y * p.x + q.z * p.w;
-    t.w = q.w * p.w - q.x * p.x - q.y * p.y - q.z * p.z;
-    kyQuat r;
-    r.x = t.w * qi.x + t.x * qi.w + t.y * qi.z - t.z * qi.y;
-    r.y = t.w * qi.y - t.x * qi.z + t.y * qi.w + t.z * qi.x;
-    r.z = t.w * qi.z + t.x * qi.y - t.y * qi.x + t.z * qi.w;
+    kyQuat r = ky_quat_mul(ky_quat_mul(q, p), ky_quat_conj(q));
     return ky_vec3(r.x, r.y, r.z);
 }
 
@@ -187,33 +178,16 @@ kyVec3 ky_mat4_mul_dir(const kyMat4 *m, kyVec3 d) {
 }
 
 int ky_ray_aabb(kyVec3 o, kyVec3 inv_d, float t_max, const kyAABB *b, float *out_t) {
-    float tmin = (b->min.x - o.x) * inv_d.x;
-    float tmax = (b->max.x - o.x) * inv_d.x;
-    if (tmin > tmax) {
-        float tmp = tmin;
-        tmin = tmax;
-        tmax = tmp;
+    const float *oo = &o.x, *idd = &inv_d.x, *mn = &b->min.x, *mx = &b->max.x;
+    float tmin = -1e30f, tmax = 1e30f;
+    for (int i = 0; i < 3; ++i) {
+        float t1 = (mn[i] - oo[i]) * idd[i];
+        float t2 = (mx[i] - oo[i]) * idd[i];
+        if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+        if (t1 > tmin) tmin = t1;
+        if (t2 < tmax) tmax = t2;
+        if (tmin > tmax) return 0;
     }
-    float tymin = (b->min.y - o.y) * inv_d.y;
-    float tymax = (b->max.y - o.y) * inv_d.y;
-    if (tymin > tymax) {
-        float tmp = tymin;
-        tymin = tymax;
-        tymax = tmp;
-    }
-    if (tmin > tymax || tymin > tmax) return 0;
-    tmin = tymin > tmin ? tymin : tmin;
-    tmax = tymax < tmax ? tymax : tmax;
-    float tzmin = (b->min.z - o.z) * inv_d.z;
-    float tzmax = (b->max.z - o.z) * inv_d.z;
-    if (tzmin > tzmax) {
-        float tmp = tzmin;
-        tzmin = tzmax;
-        tzmax = tmp;
-    }
-    if (tmin > tzmax || tzmin > tmax) return 0;
-    tmin = tzmin > tmin ? tzmin : tmin;
-    tmax = tzmax < tmax ? tzmax : tmax;
     if (tmin < 0.0f) tmin = 0.0f;
     if (tmin > t_max) return 0;
     *out_t = tmin;

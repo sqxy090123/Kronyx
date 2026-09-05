@@ -11,11 +11,11 @@
 
 ## P2: Rendering & ECS
 - [x] Implement basic ECS framework
-- [ ] Implement Transform component  -- ecs.h 为纯框架，零预定义组件
-- [ ] Implement Renderer component
-- [ ] Implement basic 2D rendering pipeline  -- 现有 RHI 后端抽象 + console/GL 实现，无 2D 层
-- [ ] Implement Sprite component
-- [ ] Implement Camera system
+- [x] Implement Transform component (2026-09-05, 2d.h: pos/rotation_z/scale/z)
+- [ ] Implement Renderer component  -- 3D 渲染器组件延后
+- [x] Implement basic 2D rendering pipeline (2026-09-05, sprite batch + Camera2D + GL 像素级验证)
+- [x] Implement Sprite component (texture/color/size/uv/layer/flip)
+- [x] Implement Camera system (Camera2D: pos/rotation/zoom/viewport/active)
 - [x] Implement basic physics (AABB collision)
 
 ## P3: Physics & Animation
@@ -48,6 +48,7 @@
 - [x] Render RHI 双后端落地 (2026-09-05)：22 API vtable 抽象 + console 调试后端 + GL/EGL 无头后端（KY_HAS_EGL 编译开关，surfaceless pbuffer + GLES3，glReadPixels 像素级验证）；Vulkan 仅枚举预留，实现待真 GPU 环境
 - [x] Game packaging system (2026-09-05)：ky_pack 支持 exe/npm/jar（apk not-supported），test_pack 端到端验证
 - [x] Script engine hardening (2026-09-05)：全局变量系统重构（隐式 __top__ proto + gvar 名字表）、字符串字面量/native 直发/局部名寄存器分配修复，test_global_vars 回归
+- [x] 2D pipeline components (2026-09-05)：Transform/Sprite/Camera2D + batch renderer（ky2d_render_world/_auto/_register_components/_camera_view_proj），(layer,z,id) 排序、4096/批分批、白纹理兜底、GLES3 内置 shader；test_2d 43 断言含 GL 像素级验证；RHI 新增 ky_rd_shader_uniform 与 ky_rd_update_buffer，kyVertexAttrib 支持 UBYTE 顶点属性
 - [ ] Final integration test
 
 ---
@@ -109,7 +110,8 @@ ctest --test-dir build --output-on-failure
 - 渲染命令列表无 cancel API：ky_rd_begin 后不 submit 即泄漏；cl 首字段=rd 的隐式契约缺注释；console 后端 draw_indexed 打印 "verts" 术语误导
 - 编辑器（tools/editor）有骨架但 KYR_BUILD_EDITOR 默认 OFF，未纳入 CI
 - 输入/窗口事件系统缺失：无 ky_event/ky_input API，物理无碰撞回调导出
-- 2026-09-05 核查：P1-P3 曾有 8 项虚勾已改回（object model/GC/stdlib、Transform/Renderer/Sprite/Camera/2D 管线、joints/动画/粒子）
+- 2d.c GPU 资源静态缓存按单 RenderDevice 假设（V1）；换设备重建、设备销毁后缓存指针失效仅清引用
+- 2026-09-05 核查：P1-P3 曾有 8 项虚勾已改回（object model/GC/stdlib、Transform/Renderer/Sprite/Camera/2D 管线、joints/动画/粒子）；同日 P2 缺口已补齐（见 P2/P6），Renderer(3D) 组件仍空缺
 
 ## P4 Continuation: Force Field System
 - [x] Design force field data structures (kyForceField)

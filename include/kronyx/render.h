@@ -7,6 +7,7 @@
 
 typedef enum kyRendererBackend {
     KY_RENDERER_NONE = 0,
+    KY_RENDERER_CONSOLE,
     KY_RENDERER_GL,
     KY_RENDERER_VULKAN
 } kyRendererBackend;
@@ -31,11 +32,17 @@ typedef struct kyShaderSource {
     const char *entry;
 } kyShaderSource;
 
+typedef enum kyAttribType {
+    KY_ATTRIB_FLOAT = 0,
+    KY_ATTRIB_UBYTE
+} kyAttribType;
+
 typedef struct kyVertexAttrib {
     uint32_t location;
     uint32_t offset;
     uint32_t size;
     uint8_t normalized;
+    uint8_t type; /* kyAttribType, default FLOAT */
 } kyVertexAttrib;
 
 typedef struct kyVertexLayout {
@@ -64,11 +71,14 @@ typedef struct kyCommandList kyCommandList;
 KY_API kyRenderDevice *ky_rd_create(kyRendererBackend backend, void *platform_win);
 KY_API void            ky_rd_destroy(kyRenderDevice *rd);
 KY_API const char     *ky_rd_backend_name(const kyRenderDevice *rd);
+KY_API kyRendererBackend ky_rd_backend(const kyRenderDevice *rd);
 
 KY_API kyShader   *ky_rd_create_shader(kyRenderDevice *rd, const kyShaderSource *src);
 KY_API void        ky_rd_destroy_shader(kyRenderDevice *rd, kyShader *s);
+KY_API int         ky_rd_shader_uniform(const kyRenderDevice *rd, const kyShader *s, const char *name);
 KY_API kyBuffer   *ky_rd_create_buffer(kyRenderDevice *rd, size_t size, const void *data, int dynamic);
 KY_API void        ky_rd_destroy_buffer(kyRenderDevice *rd, kyBuffer *b);
+KY_API int         ky_rd_update_buffer(kyRenderDevice *rd, kyBuffer *b, size_t offset, size_t size, const void *data);
 KY_API kyTexture  *ky_rd_create_texture_2d(kyRenderDevice *rd, int w, int h, int channels, const void *pixels);
 KY_API void        ky_rd_destroy_texture(kyRenderDevice *rd, kyTexture *t);
 KY_API kyPipeline *ky_rd_create_pipeline(kyRenderDevice *rd, const kyPipelineDesc *desc);

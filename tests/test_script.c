@@ -482,6 +482,28 @@ static void test_bitwise_ops(void) {
     }
 }
 
+static void test_global_vars(void) {
+    /* top-level var + read/write from function + compound assign + local mix */
+    kyVM *vm = ky_vm_create(NULL);
+    ASSERT(vm != NULL, "create VM for global vars");
+    const char *src =
+        "var score = 10;\n"
+        "var name = \"player\";\n"
+        "function main() {\n"
+        "    score += 5;\n"
+        "    var local = 7;\n"
+        "    score = score + local;\n"
+        "    return score;\n"
+        "}\n";
+    int r = ky_vm_load_string(vm, src, "globals");
+    ASSERT(r == 0, "load top-level vars");
+    kyValue ret;
+    r = ky_vm_call(vm, "main", NULL, 0, &ret);
+    ASSERT(r == 0, "call main with globals");
+    ASSERT(ret.as.fval == 22.0, "global score updated to 22 (10+5+7)");
+    ky_vm_destroy(vm);
+}
+
 int main(void) {
     printf("=== Script (kyx) Test ===\n");
 
@@ -497,6 +519,7 @@ int main(void) {
     test_null_safety();
     printf("10\n"); test_compile_exec();
     test_bitwise_ops();
+    test_global_vars();
 
     printf("\n=== %d tests ran, %d failures ===\n", assertions, failures);
     return failures == 0 ? 0 : 1;

@@ -5,51 +5,23 @@
 #include <stdio.h>
 #include <ctype.h>
 
-static const char *const keywords[] = {
-    "use", "namespace", "if", "else", "while", "for",
-    "break", "continue", "return", "function", "fun",
-    "class", "var", "let", "const", "true", "false",
-    "nil", "self", "super", "new", "this",
-    "import", "export", "&&", "||", "^", NULL
+static const struct { const char *name; kyTokenKind kind; } keywords[] = {
+    {"use", KYX_TK_USE}, {"namespace", KYX_TK_NAMESPACE},
+    {"if", KYX_TK_IF}, {"else", KYX_TK_ELSE},
+    {"while", KYX_TK_WHILE}, {"for", KYX_TK_FOR},
+    {"break", KYX_TK_BREAK}, {"continue", KYX_TK_CONTINUE},
+    {"return", KYX_TK_RETURN}, {"function", KYX_TK_FUNCTION}, {"fun", KYX_TK_FUNCTION},
+    {"class", KYX_TK_CLASS}, {"var", KYX_TK_VAR}, {"let", KYX_TK_LET}, {"const", KYX_TK_CONST},
+    {"true", KYX_TK_TRUE}, {"false", KYX_TK_FALSE}, {"nil", KYX_TK_NIL_LIT},
+    {"self", KYX_TK_SELF}, {"this", KYX_TK_SELF}, {"super", KYX_TK_SUPER}, {"new", KYX_TK_NEW},
+    {"import", KYX_TK_IMPORT}, {"export", KYX_TK_EXPORT},
 };
 
-static const char *lookup_keyword(const char *start, size_t len) {
-    for (int i = 0; keywords[i] != NULL; i++) {
-        if ((size_t)strlen(keywords[i]) == len &&
-            memcmp(start, keywords[i], len) == 0) {
-            return keywords[i];
-        }
+static kyTokenKind lookup_keyword(const char *start, size_t len) {
+    for (size_t i = 0; i < sizeof(keywords) / sizeof(keywords[0]); i++) {
+        if (strlen(keywords[i].name) == len && memcmp(start, keywords[i].name, len) == 0)
+            return keywords[i].kind;
     }
-    return NULL;
-}
-
-static kyTokenKind token_kind_from_name(const char *name) {
-    if (strcmp(name, "use") == 0) return KYX_TK_USE;
-    if (strcmp(name, "namespace") == 0) return KYX_TK_NAMESPACE;
-    if (strcmp(name, "if") == 0) return KYX_TK_IF;
-    if (strcmp(name, "else") == 0) return KYX_TK_ELSE;
-    if (strcmp(name, "while") == 0) return KYX_TK_WHILE;
-    if (strcmp(name, "for") == 0) return KYX_TK_FOR;
-    if (strcmp(name, "break") == 0) return KYX_TK_BREAK;
-    if (strcmp(name, "continue") == 0) return KYX_TK_CONTINUE;
-    if (strcmp(name, "return") == 0) return KYX_TK_RETURN;
-    if (strcmp(name, "function") == 0 || strcmp(name, "fun") == 0) return KYX_TK_FUNCTION;
-    if (strcmp(name, "class") == 0) return KYX_TK_CLASS;
-    if (strcmp(name, "var") == 0) return KYX_TK_VAR;
-    if (strcmp(name, "let") == 0) return KYX_TK_LET;
-    if (strcmp(name, "const") == 0) return KYX_TK_CONST;
-    if (strcmp(name, "true") == 0) return KYX_TK_TRUE;
-    if (strcmp(name, "false") == 0) return KYX_TK_FALSE;
-    if (strcmp(name, "nil") == 0) return KYX_TK_NIL_LIT;
-    if (strcmp(name, "self") == 0) return KYX_TK_SELF;
-    if (strcmp(name, "super") == 0) return KYX_TK_SUPER;
-    if (strcmp(name, "new") == 0) return KYX_TK_NEW;
-    if (strcmp(name, "this") == 0) return KYX_TK_SELF;
-    if (strcmp(name, "import") == 0) return KYX_TK_IMPORT;
-    if (strcmp(name, "export") == 0) return KYX_TK_EXPORT;
-    if (strcmp(name, "&&") == 0) return KYX_TK_AND;
-    if (strcmp(name, "||") == 0) return KYX_TK_OR;
-    if (strcmp(name, "^") == 0) return KYX_TK_BNOT;
     return KYX_TK_IDENT;
 }
 
@@ -239,14 +211,8 @@ kyToken kyx_lexer_next(kyLexer *lx) {
 
     if (isalpha(c) || c == '_') {
         while (isalnum(peek(lx)) || peek(lx) == '_') advance(lx);
-        const char *kw = lookup_keyword(lx->src + start_pos,
-                                        (size_t)(lx->pos - start_pos));
-        if (kw) {
-            t = make_token(lx, token_kind_from_name(kw), start_pos, start_line, start_col);
-        } else {
-            t = make_token(lx, KYX_TK_IDENT, start_pos, start_line, start_col);
-        }
-        return t;
+        return make_token(lx, lookup_keyword(lx->src + start_pos, (size_t)(lx->pos - start_pos)),
+                          start_pos, start_line, start_col);
     }
 
     switch (c) {

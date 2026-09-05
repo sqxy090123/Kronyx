@@ -11,6 +11,12 @@
 
 
 
+static char *tok_dup(const kyToken *t) {
+    char *s = (char *)malloc(t->len + 1);
+    if (s) { memcpy(s, t->start, t->len); s[t->len] = '\0'; }
+    return s;
+}
+
 static kyAstNode *ast_new(kyAstKind kind, int line);
 static void ast_free(kyAstNode *n);
 static kyAstNode *parse_expression(kyParser *p, int prec);
@@ -130,8 +136,7 @@ static kyAstNode *parse_postfix(kyParser *p, kyAstNode *base) {
             if (!fname) { ast_free(base); return NULL; }
             kyAstNode *n = ast_new(KY_AST_EXPR_FIELD, t->line);
             n->as.field.obj = base;
-            n->as.field.field = (char *)malloc(fname->len + 1);
-            if (n->as.field.field) { memcpy(n->as.field.field, fname->start, fname->len); n->as.field.field[fname->len] = '\0'; }
+            n->as.field.field = tok_dup(fname);
             base = n;
         } else if (t->kind == KYX_TK_LBRACK) {
             tok_advance(p);
@@ -169,8 +174,7 @@ static kyAstNode *parse_prefix(kyParser *p) {
         kyToken *cname = tok_consume(p, KYX_TK_IDENT, "expected class name after 'new'");
         if (!cname) return NULL;
         kyAstNode *n = ast_new(KY_AST_EXPR_NEW, t->line);
-        n->as.new_expr.class_name = (char *)malloc(cname->len + 1);
-        if (n->as.new_expr.class_name) { memcpy(n->as.new_expr.class_name, cname->start, cname->len); n->as.new_expr.class_name[cname->len] = '\0'; }
+        n->as.new_expr.class_name = tok_dup(cname);
         n->as.new_expr.arg_count = 0; n->as.new_expr.args = NULL;
         if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_LPAREN) {
             tok_advance(p);
@@ -196,8 +200,7 @@ static kyAstNode *parse_prefix(kyParser *p) {
             while (!tok_at_eof(p) && tok_current(p)->kind != KYX_TK_RPAREN) {
                 kyToken *pt = tok_current(p);
                 if (pt->kind == KYX_TK_IDENT) {
-                    char *name = (char *)malloc(pt->len + 1);
-                    if (name) { memcpy(name, pt->start, pt->len); name[pt->len] = '\0'; }
+                    char *name = tok_dup(pt);
                     int pc = n->as.anon_func.param_count++;
                     n->as.anon_func.params = (char **)realloc(n->as.anon_func.params, (size_t)n->as.anon_func.param_count * sizeof(char *));
                     n->as.anon_func.params[pc] = name;
@@ -227,8 +230,7 @@ static kyAstNode *parse_primary(kyParser *p) {
     if (t->kind == KYX_TK_IDENT) {
         tok_advance(p);
         kyAstNode *n = ast_new(KY_AST_EXPR_IDENT, t->line);
-        n->as.ident.name = (char *)malloc(t->len + 1);
-        if (n->as.ident.name) { memcpy(n->as.ident.name, t->start, t->len); n->as.ident.name[t->len] = '\0'; }
+        n->as.ident.name = tok_dup(t);
         return n;
     }
     if (t->kind == KYX_TK_LPAREN) {
@@ -285,12 +287,6 @@ static int find_binop(kyToken *t) {
         case KYX_TK_BXOR:     return 23; /* ^ */
         default:              return -1;
     }
-    /* Multi-char operators from lexer (as IDENT tokens) */
-    for (int i = 0; binops[i].op; i++) {
-        if (t->kind == KYX_TK_IDENT && t->len == strlen(binops[i].op) && memcmp(t->start, binops[i].op, t->len) == 0)
-            return i;
-    }
-    return -1;
 }
 
 static kyAstNode *parse_expression(kyParser *p, int min_prec) {
@@ -350,8 +346,7 @@ static kyAstNode *parse_statement(kyParser *p) {
         kyToken *name = tok_consume(p, KYX_TK_IDENT, "expected variable name");
         if (!name) return NULL;
         kyAstNode *n = ast_new(KY_AST_VAR_DECL, t->line);
-        n->as.var_decl.name = (char *)malloc(name->len + 1);
-        if (n->as.var_decl.name) { memcpy(n->as.var_decl.name, name->start, name->len); n->as.var_decl.name[name->len] = '\0'; }
+        n->as.var_decl.name = tok_dup(name);
         n->as.var_decl.is_const = is_const;
         if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_ASSIGN) {
             tok_advance(p);
@@ -365,16 +360,14 @@ static kyAstNode *parse_statement(kyParser *p) {
         kyToken *fname = tok_consume(p, KYX_TK_IDENT, "expected function name");
         if (!fname) return NULL;
         kyAstNode *n = ast_new(KY_AST_FUNC_DECL, t->line);
-        n->as.func_decl.name = (char *)malloc(fname->len + 1);
-        if (n->as.func_decl.name) { memcpy(n->as.func_decl.name, fname->start, fname->len); n->as.func_decl.name[fname->len] = '\0'; }
+        n->as.func_decl.name = tok_dup(fname);
 
         n->as.func_decl.param_count = 0; n->as.func_decl.params = NULL; n->as.func_decl.proto = NULL;
         tok_consume(p, KYX_TK_LPAREN, "expected '('");
         while (!tok_at_eof(p) && tok_current(p)->kind != KYX_TK_RPAREN) {
             kyToken *pt = tok_current(p);
             if (pt->kind == KYX_TK_IDENT) {
-                char *pname = (char *)malloc(pt->len + 1);
-                if (pname) { memcpy(pname, pt->start, pt->len); pname[pt->len] = '\0'; }
+                char *pname = tok_dup(pt);
                 int pc = n->as.func_decl.param_count++;
                 n->as.func_decl.params = (char **)realloc(n->as.func_decl.params, (size_t)n->as.func_decl.param_count * sizeof(char *));
                 n->as.func_decl.params[pc] = pname;
@@ -391,8 +384,7 @@ static kyAstNode *parse_statement(kyParser *p) {
         kyToken *cname = tok_consume(p, KYX_TK_IDENT, "expected class name");
         if (!cname) return NULL;
         kyAstNode *n = ast_new(KY_AST_CLASS_DECL, t->line);
-        n->as.class_decl.name = (char *)malloc(cname->len + 1);
-        if (n->as.class_decl.name) { memcpy(n->as.class_decl.name, cname->start, cname->len); n->as.class_decl.name[cname->len] = '\0'; }
+        n->as.class_decl.name = tok_dup(cname);
         n->as.class_decl.parent[0] = '\0';
         n->as.class_decl.klass = (kyAstClass *)calloc(1, sizeof(kyAstClass));
         if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_IDENT) {
@@ -443,8 +435,7 @@ static kyAstNode *parse_statement(kyParser *p) {
                 kyToken *name = tok_consume(p, KYX_TK_IDENT, "expected variable name");
                 if (name) {
                     init = ast_new(KY_AST_VAR_DECL, tt->line);
-                    init->as.var_decl.name = (char *)malloc(name->len + 1);
-                    if (init->as.var_decl.name) { memcpy(init->as.var_decl.name, name->start, name->len); init->as.var_decl.name[name->len] = '\0'; }
+                    init->as.var_decl.name = tok_dup(name);
                     init->as.var_decl.is_const = is_const;
                     if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_ASSIGN) {
                         tok_advance(p);
@@ -493,17 +484,14 @@ static kyAstNode *parse_statement(kyParser *p) {
         kyToken *path_tok = tok_consume(p, KYX_TK_STRING_LIT, "expected path string");
         if (!path_tok) return NULL;
         kyAstNode *n = ast_new(KY_AST_USE_DECL, t->line);
-        n->as.use_decl.scope = (char *)malloc(scope_tok->len + 1);
-        n->as.use_decl.path = (char *)malloc(path_tok->len + 1);
-        if (n->as.use_decl.scope) { memcpy(n->as.use_decl.scope, scope_tok->start, scope_tok->len); n->as.use_decl.scope[scope_tok->len] = '\0'; }
-        if (n->as.use_decl.path) { memcpy(n->as.use_decl.path, path_tok->start, path_tok->len); n->as.use_decl.path[path_tok->len] = '\0'; }
+        n->as.use_decl.scope = tok_dup(scope_tok);
+        n->as.use_decl.path = tok_dup(path_tok);
         n->as.use_decl.ns = NULL;
         if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_NAMESPACE) {
             tok_advance(p);
             kyToken *nstok = tok_consume(p, KYX_TK_IDENT, "expected namespace name");
             if (nstok) {
-                n->as.use_decl.ns = (char *)malloc(nstok->len + 1);
-                if (n->as.use_decl.ns) { memcpy(n->as.use_decl.ns, nstok->start, nstok->len); n->as.use_decl.ns[nstok->len] = '\0'; }
+                n->as.use_decl.ns = tok_dup(nstok);
             }
         }
         tok_consume(p, KYX_TK_SEMI, "expected ';'");

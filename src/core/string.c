@@ -56,8 +56,5 @@ void ky_string_clear(kyString *s) {
 }
 
 const char *ky_string_cstr(const kyString *s) {
-    if (!s->data) {
-        return "";
-    }
-    return s->data;
+    return s->data ? s->data : "";
 }

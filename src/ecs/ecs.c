@@ -1,7 +1,30 @@
 #include "kronyx/ecs.h"
-#include "kronyx/hashmap.h"
 
 #define KY_ARCH_NONE -1
+
+static const kyComponentType *comp_type(const kyWorld *w, uint32_t id) {
+    return (const kyComponentType *)ky_array_get(&w->component_types, id);
+}
+
+static kyEntitySlot *slot_at(const kyWorld *w, uint32_t id) {
+    return (kyEntitySlot *)ky_array_get(&w->slots, id);
+}
+
+static kyArchetype *arch_at(const kyWorld *w, int32_t idx) {
+    return (kyArchetype *)ky_array_get(&w->archetypes, idx);
+}
+
+static int arch_has_type(const kyArchetype *a, uint32_t type_id) {
+    for (uint32_t i = 0; i < a->type_count; ++i) {
+        if (a->types[i] == type_id) return (int)i;
+    }
+    return -1;
+}
+
+static void *find_comp(const kyWorld *w, const kyArchetype *a, size_t row, uint32_t type_id) {
+    int col = arch_has_type(a, type_id);
+    return col < 0 ? NULL : (char *)a->columns[col] + row * comp_type(w, type_id)->size;
+}
 
 static uint64_t archetype_hash(const uint32_t *types, uint32_t n) {
     uint64_t h = 1469598103934665603ull;
@@ -58,10 +81,8 @@ static int32_t archetype_create(kyWorld *w, const uint32_t *types, uint32_t n) {
         a.columns = (void **)ky_mem_alloc(&w->alloc, n * sizeof(void *));
         memset(a.columns, 0, n * sizeof(void *));
         a.strides = (size_t *)ky_mem_alloc(&w->alloc, n * sizeof(size_t));
-        for (uint32_t i = 0; i < n; ++i) {
-            const kyComponentType *ct = (const kyComponentType *)ky_array_get(&w->component_types, a.types[i]);
-            a.strides[i] = ct->size;
-        }
+        for (uint32_t i = 0; i < n; ++i)
+            a.strides[i] = comp_type(w, a.types[i])->size;
     }
     a.type_hash = archetype_hash(a.types, n);
     ky_array_push(&w->archetypes, &a);
@@ -73,10 +94,8 @@ static void archetype_grow(kyWorld *w, kyArchetype *a, size_t need) {
     size_t nc = a->capacity ? a->capacity : 16;
     while (nc < need) nc *= 2;
     a->entity_ids = (uint32_t *)ky_mem_realloc(&w->alloc, a->entity_ids, nc * sizeof(uint32_t));
-    for (uint32_t i = 0; i < a->type_count; ++i) {
-        const kyComponentType *ct = (const kyComponentType *)ky_array_get(&w->component_types, a->types[i]);
-        a->columns[i] = ky_mem_realloc(&w->alloc, a->columns[i], nc * ct->size);
-    }
+    for (uint32_t i = 0; i < a->type_count; ++i)
+        a->columns[i] = ky_mem_realloc(&w->alloc, a->columns[i], nc * comp_type(w, a->types[i])->size);
     a->capacity = nc;
 }
 
@@ -85,57 +104,43 @@ static void archetype_remove_row(kyWorld *w, kyArchetype *a, size_t row) {
     if (row != last) {
         uint32_t moved_id = a->entity_ids[last];
         for (uint32_t i = 0; i < a->type_count; ++i) {
-            const kyComponentType *ct = (const kyComponentType *)ky_array_get(&w->component_types, a->types[i]);
-            memcpy((char *)a->columns[i] + row * ct->size,
-                   (char *)a->columns[i] + last * ct->size, ct->size);
+            size_t sz = comp_type(w, a->types[i])->size;
+            memcpy((char *)a->columns[i] + row * sz, (char *)a->columns[i] + last * sz, sz);
         }
-        kyEntitySlot *slot = (kyEntitySlot *)ky_array_get(&w->slots, moved_id);
-        slot->row = (uint32_t)row;
+        slot_at(w, moved_id)->row = (uint32_t)row;
     }
     a->count--;
 }
 
 static int32_t move_entity(kyWorld *w, uint32_t id, const uint32_t *new_types, uint32_t new_count) {
-    kyEntitySlot *slot = (kyEntitySlot *)ky_array_get(&w->slots, id);
+    kyEntitySlot *slot = slot_at(w, id);
     int32_t old_arch = slot->archetype_index;
     size_t old_row = slot->row;
 
     uint32_t sorted[64];
-    uint32_t *types = NULL;
-    uint32_t *tmp_buf = NULL;
+    uint32_t *types = NULL, *tmp_buf = NULL;
     if (new_count > 0) {
-        if (new_count <= KY_ARRAY_LEN(sorted)) {
-            types = sorted;
-        } else {
-            tmp_buf = (uint32_t *)ky_mem_alloc(&w->alloc, new_count * sizeof(uint32_t));
-            types = tmp_buf;
-        }
+        types = new_count <= KY_ARRAY_LEN(sorted)
+            ? sorted
+            : (tmp_buf = (uint32_t *)ky_mem_alloc(&w->alloc, new_count * sizeof(uint32_t)));
         memcpy(types, new_types, new_count * sizeof(uint32_t));
         sort_types(types, new_count);
     }
 
     int32_t new_arch = archetype_find(w, types, new_count);
-    if (new_arch == KY_ARCH_NONE) {
-        new_arch = archetype_create(w, types, new_count);
-    }
-    kyArchetype *na = (kyArchetype *)ky_array_get(&w->archetypes, new_arch);
+    if (new_arch == KY_ARCH_NONE) new_arch = archetype_create(w, types, new_count);
+    kyArchetype *na = arch_at(w, new_arch);
     archetype_grow(w, na, na->count + 1);
     size_t new_row = na->count++;
-
-    kyArchetype *oa = old_arch == KY_ARCH_NONE ? NULL : (kyArchetype *)ky_array_get(&w->archetypes, old_arch);
+    kyArchetype *oa = old_arch == KY_ARCH_NONE ? NULL : arch_at(w, old_arch);
 
     for (uint32_t i = 0; i < new_count; ++i) {
-        uint32_t tid = types[i];
-        const kyComponentType *ct = (const kyComponentType *)ky_array_get(&w->component_types, tid);
+        const kyComponentType *ct = comp_type(w, types[i]);
         void *dst = (char *)na->columns[i] + new_row * ct->size;
         memset(dst, 0, ct->size);
         if (oa) {
-            for (uint32_t j = 0; j < oa->type_count; ++j) {
-                if (oa->types[j] == tid) {
-                    memcpy(dst, (char *)oa->columns[j] + old_row * ct->size, ct->size);
-                    break;
-                }
-            }
+            int col = arch_has_type(oa, types[i]);
+            if (col >= 0) memcpy(dst, (char *)oa->columns[col] + old_row * ct->size, ct->size);
         }
         if (ct->ctor) ct->ctor(dst);
     }
@@ -143,16 +148,12 @@ static int32_t move_entity(kyWorld *w, uint32_t id, const uint32_t *new_types, u
 
     if (oa) {
         for (uint32_t i = 0; i < oa->type_count; ++i) {
-            uint32_t tid = oa->types[i];
-            int found = 0;
+            int keep = 0;
             for (uint32_t j = 0; j < new_count; ++j) {
-                if (types[j] == tid) {
-                    found = 1;
-                    break;
-                }
+                if (types[j] == oa->types[i]) { keep = 1; break; }
             }
-            if (!found) {
-                const kyComponentType *ct = (const kyComponentType *)ky_array_get(&w->component_types, tid);
+            if (!keep) {
+                const kyComponentType *ct = comp_type(w, oa->types[i]);
                 if (ct->dtor) ct->dtor((char *)oa->columns[i] + old_row * ct->size);
             }
         }
@@ -179,7 +180,7 @@ kyWorld *ky_world_create(kyAllocator *alloc) {
 
 void ky_world_destroy(kyWorld *w) {
     for (size_t i = 0; i < w->archetypes.len; ++i) {
-        kyArchetype *a = (kyArchetype *)ky_array_get(&w->archetypes, i);
+        kyArchetype *a = arch_at(w, (int32_t)i);
         ky_mem_free(&w->alloc, a->types);
         ky_mem_free(&w->alloc, a->strides);
         ky_mem_free(&w->alloc, a->entity_ids);
@@ -207,7 +208,7 @@ uint32_t ky_world_register_component(kyWorld *w, const kyComponentType *t) {
 
 const kyComponentType *ky_world_component_type(const kyWorld *w, uint32_t type_id) {
     if (type_id >= w->component_types.len) return NULL;
-    return (const kyComponentType *)ky_array_get(&w->component_types, type_id);
+    return comp_type(w, type_id);
 }
 
 void ky_world_register_system(kyWorld *w, const kySystem *sys) {
@@ -231,7 +232,7 @@ kyEntity ky_world_spawn(kyWorld *w) {
     if (w->free_ids.len > 0) {
         e.id = *(uint32_t *)ky_array_get(&w->free_ids, w->free_ids.len - 1);
         w->free_ids.len--;
-        kyEntitySlot *slot = (kyEntitySlot *)ky_array_get(&w->slots, e.id);
+        kyEntitySlot *slot = slot_at(w, e.id);
         slot->version++;
         e.version = slot->version;
         slot->archetype_index = KY_ARCH_NONE;
@@ -250,10 +251,9 @@ kyEntity ky_world_spawn(kyWorld *w) {
 
 void ky_world_despawn(kyWorld *w, kyEntity e) {
     if (!ky_entity_valid(w, e)) return;
-    kyEntitySlot *slot = (kyEntitySlot *)ky_array_get(&w->slots, e.id);
-    if (slot->archetype_index != KY_ARCH_NONE) {
+    kyEntitySlot *slot = slot_at(w, e.id);
+    if (slot->archetype_index != KY_ARCH_NONE)
         ky_world_remove_all_components(w, e);
-    }
     slot->version++;
     slot->archetype_index = KY_ARCH_NONE;
     slot->row = 0;
@@ -262,55 +262,34 @@ void ky_world_despawn(kyWorld *w, kyEntity e) {
 
 int ky_entity_valid(const kyWorld *w, kyEntity e) {
     if (e.id >= w->slots.len) return 0;
-    const kyEntitySlot *slot = (const kyEntitySlot *)ky_array_get(&w->slots, e.id);
-    return slot->version == e.version;
+    return slot_at(w, e.id)->version == e.version;
 }
 
 void *ky_world_add_component(kyWorld *w, kyEntity e, uint32_t type_id) {
     if (!ky_entity_valid(w, e)) return NULL;
-    kyEntitySlot *slot = (kyEntitySlot *)ky_array_get(&w->slots, e.id);
+    kyEntitySlot *slot = slot_at(w, e.id);
     if (slot->archetype_index != KY_ARCH_NONE) {
-        kyArchetype *a = (kyArchetype *)ky_array_get(&w->archetypes, slot->archetype_index);
-        for (uint32_t i = 0; i < a->type_count; ++i) {
-            if (a->types[i] == type_id) {
-                const kyComponentType *ct = (const kyComponentType *)ky_array_get(&w->component_types, type_id);
-                return (char *)a->columns[i] + slot->row * ct->size;
-            }
-        }
+        void *p = find_comp(w, arch_at(w, slot->archetype_index), slot->row, type_id);
+        if (p) return p;
     }
     kyArray tmp;
     ky_array_init(&tmp, &w->alloc, sizeof(uint32_t), 8);
     if (slot->archetype_index != KY_ARCH_NONE) {
-        kyArchetype *a = (kyArchetype *)ky_array_get(&w->archetypes, slot->archetype_index);
-        for (uint32_t i = 0; i < a->type_count; ++i) {
+        kyArchetype *a = arch_at(w, slot->archetype_index);
+        for (uint32_t i = 0; i < a->type_count; ++i)
             ky_array_push(&tmp, &a->types[i]);
-        }
     }
     ky_array_push(&tmp, &type_id);
     int32_t na = move_entity(w, e.id, (uint32_t *)tmp.data, (uint32_t)tmp.len);
     ky_array_deinit(&tmp);
-    kyArchetype *a = (kyArchetype *)ky_array_get(&w->archetypes, na);
-    for (uint32_t i = 0; i < a->type_count; ++i) {
-        if (a->types[i] == type_id) {
-            const kyComponentType *ct = (const kyComponentType *)ky_array_get(&w->component_types, type_id);
-            return (char *)a->columns[i] + slot->row * ct->size;
-        }
-    }
-    return NULL;
+    return find_comp(w, arch_at(w, na), slot->row, type_id);
 }
 
 void *ky_world_get_component(const kyWorld *w, kyEntity e, uint32_t type_id) {
     if (!ky_entity_valid(w, e)) return NULL;
-    const kyEntitySlot *slot = (const kyEntitySlot *)ky_array_get(&w->slots, e.id);
+    const kyEntitySlot *slot = slot_at(w, e.id);
     if (slot->archetype_index == KY_ARCH_NONE) return NULL;
-    const kyArchetype *a = (const kyArchetype *)ky_array_get(&w->archetypes, slot->archetype_index);
-    for (uint32_t i = 0; i < a->type_count; ++i) {
-        if (a->types[i] == type_id) {
-            const kyComponentType *ct = (const kyComponentType *)ky_array_get(&w->component_types, type_id);
-            return (char *)a->columns[i] + slot->row * ct->size;
-        }
-    }
-    return NULL;
+    return find_comp(w, arch_at(w, slot->archetype_index), slot->row, type_id);
 }
 
 int ky_world_has_component(const kyWorld *w, kyEntity e, uint32_t type_id) {
@@ -319,24 +298,15 @@ int ky_world_has_component(const kyWorld *w, kyEntity e, uint32_t type_id) {
 
 void ky_world_remove_component(kyWorld *w, kyEntity e, uint32_t type_id) {
     if (!ky_entity_valid(w, e)) return;
-    kyEntitySlot *slot = (kyEntitySlot *)ky_array_get(&w->slots, e.id);
+    kyEntitySlot *slot = slot_at(w, e.id);
     if (slot->archetype_index == KY_ARCH_NONE) return;
-    kyArchetype *a = (kyArchetype *)ky_array_get(&w->archetypes, slot->archetype_index);
-    int found = 0;
-    for (uint32_t i = 0; i < a->type_count; ++i) {
-        if (a->types[i] == type_id) {
-            found = 1;
-            break;
-        }
-    }
-    if (!found) return;
+    kyArchetype *a = arch_at(w, slot->archetype_index);
+    if (arch_has_type(a, type_id) < 0) return;
 
     kyArray tmp;
     ky_array_init(&tmp, &w->alloc, sizeof(uint32_t), 8);
     for (uint32_t i = 0; i < a->type_count; ++i) {
-        if (a->types[i] != type_id) {
-            ky_array_push(&tmp, &a->types[i]);
-        }
+        if (a->types[i] != type_id) ky_array_push(&tmp, &a->types[i]);
     }
     move_entity(w, e.id, (uint32_t *)tmp.data, (uint32_t)tmp.len);
     ky_array_deinit(&tmp);
@@ -344,12 +314,12 @@ void ky_world_remove_component(kyWorld *w, kyEntity e, uint32_t type_id) {
 
 void ky_world_remove_all_components(kyWorld *w, kyEntity e) {
     if (!ky_entity_valid(w, e)) return;
-    kyEntitySlot *slot = (kyEntitySlot *)ky_array_get(&w->slots, e.id);
+    kyEntitySlot *slot = slot_at(w, e.id);
     if (slot->archetype_index == KY_ARCH_NONE) return;
-    kyArchetype *a = (kyArchetype *)ky_array_get(&w->archetypes, slot->archetype_index);
+    kyArchetype *a = arch_at(w, slot->archetype_index);
     size_t row = slot->row;
     for (uint32_t i = 0; i < a->type_count; ++i) {
-        const kyComponentType *ct = (const kyComponentType *)ky_array_get(&w->component_types, a->types[i]);
+        const kyComponentType *ct = comp_type(w, a->types[i]);
         if (ct->dtor) ct->dtor((char *)a->columns[i] + row * ct->size);
     }
     archetype_remove_row(w, a, row);
@@ -366,16 +336,9 @@ void ky_world_step(kyWorld *w, float dt) {
 
 static int view_arch_matches(const kyWorld *w, int32_t arch_index, const uint32_t *types, uint32_t n) {
     if (arch_index == KY_ARCH_NONE) return n == 0;
-    const kyArchetype *a = (const kyArchetype *)ky_array_get(&w->archetypes, arch_index);
+    const kyArchetype *a = arch_at(w, arch_index);
     for (uint32_t i = 0; i < n; ++i) {
-        int found = 0;
-        for (uint32_t j = 0; j < a->type_count; ++j) {
-            if (a->types[j] == types[i]) {
-                found = 1;
-                break;
-            }
-        }
-        if (!found) return 0;
+        if (arch_has_type(a, types[i]) < 0) return 0;
     }
     return 1;
 }
@@ -398,20 +361,14 @@ int ky_view_next(kyViewIter *it) {
             it->arch_index = 0;
         }
         if ((size_t)it->arch_index >= w->archetypes.len) return 0;
-        kyArchetype *a = (kyArchetype *)ky_array_get(&w->archetypes, it->arch_index);
-        if (it->row >= a->count) {
-            it->arch_index++;
-            it->row = 0;
-            continue;
-        }
-        if (!view_arch_matches(w, it->arch_index, it->types, it->type_count)) {
+        kyArchetype *a = arch_at(w, it->arch_index);
+        if (it->row >= a->count || !view_arch_matches(w, it->arch_index, it->types, it->type_count)) {
             it->arch_index++;
             it->row = 0;
             continue;
         }
         it->current.id = a->entity_ids[it->row];
-        const kyEntitySlot *slot = (const kyEntitySlot *)ky_array_get(&w->slots, it->current.id);
-        it->current.version = slot->version;
+        it->current.version = slot_at(w, it->current.id)->version;
         it->row++;
         return 1;
     }

@@ -52,7 +52,9 @@ typedef struct kyWorld {
     kyArray free_ids;
     kyArray systems;
     uint32_t next_version;
-} kyWorld;KY_API kyWorld *ky_world_create(kyAllocator *alloc);
+} kyWorld;
+
+KY_API kyWorld *ky_world_create(kyAllocator *alloc);
 KY_API void ky_world_destroy(kyWorld *w);
 
 KY_API uint32_t ky_world_register_component(kyWorld *w, const kyComponentType *t);
