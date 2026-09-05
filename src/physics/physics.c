@@ -181,6 +181,9 @@ static void sap_find_pairs(kyPhysicsWorld *pw) {
 void ky_physics_step(kyPhysicsWorld *pw, float dt) {
     if (!pw || dt <= 0.0f) return;
 
+    /* Apply force fields BEFORE gravity integration so they affect velocity this frame */
+    phys_apply_force_fields(pw, dt);
+
     for (int i = 0; i < pw->body_count; i++) {
         kyPhysBody *b = &pw->bodies[i];
         if (!b->alive) continue;
@@ -198,11 +201,56 @@ void ky_physics_step(kyPhysicsWorld *pw, float dt) {
         phys_body_update_aabb(b, pw);
     }
 
-    /* Apply force fields */
-    phys_apply_force_fields(pw, dt);
-
+    /* SAP broadphase to find potential collision pairs */
     sap_build_events(pw);
     sap_find_pairs(pw);
+
+    /* Narrow-phase: detect and resolve overlaps between collided bodies */
+    for (int i = 0; i < pw->pair_count; i++) {
+        kyContactPair *pair = &pw->pairs[i];
+        if (!pair->alive) continue;
+        int ia = (int)pair->body_a - 1;
+        int ib = (int)pair->body_b - 1;
+        if (ia < 0 || ia >= pw->body_count || ib < 0 || ib >= pw->body_count) continue;
+        kyPhysBody *ba = &pw->bodies[ia];
+        kyPhysBody *bb = &pw->bodies[ib];
+        if (!ba->alive || !bb->alive) continue;
+
+        /* Simple AABB overlap resolution (push apart) */
+        kyVec3 overlap = ky_vec3_sub(
+            ky_vec3_add(ba->aabb_min, ky_vec3_scale(ky_vec3_sub(ba->aabb_max, ba->aabb_min), 0.5f)),
+            ky_vec3_add(bb->aabb_min, ky_vec3_scale(ky_vec3_sub(bb->aabb_max, bb->aabb_min), 0.5f))
+        );
+        kyVec3 abs_overlap;
+        abs_overlap.x = overlap.x < 0 ? -overlap.x : overlap.x;
+        abs_overlap.y = overlap.y < 0 ? -overlap.y : overlap.y;
+        abs_overlap.z = overlap.z < 0 ? -overlap.z : overlap.z;
+
+        float axis = abs_overlap.x;
+        int ax = 0;
+        if (abs_overlap.y < axis) { axis = abs_overlap.y; ax = 1; }
+        if (abs_overlap.z < axis) { axis = abs_overlap.z; ax = 2; }
+
+        if (axis > 0.0f) {
+            float push = axis + 0.001f;
+            kyVec3 push_dir = ky_vec3_zero();
+            if (ax == 0) push_dir.x = overlap.x > 0 ? 1.0f : -1.0f;
+            else if (ax == 1) push_dir.y = overlap.y > 0 ? 1.0f : -1.0f;
+            else push_dir.z = overlap.z > 0 ? 1.0f : -1.0f;
+            push_dir = ky_vec3_normalize(push_dir);
+
+            if (ba->body.inv_mass > 0.0f) {
+                ba->body.position = ky_vec3_add(ba->body.position,
+                    ky_vec3_scale(push_dir, push * ba->body.inv_mass / (ba->body.inv_mass + bb->body.inv_mass)));
+            }
+            if (bb->body.inv_mass > 0.0f) {
+                bb->body.position = ky_vec3_sub(bb->body.position,
+                    ky_vec3_scale(push_dir, push * bb->body.inv_mass / (ba->body.inv_mass + bb->body.inv_mass)));
+                phys_body_update_aabb(bb, pw);
+            }
+            phys_body_update_aabb(ba, pw);
+        }
+    }
 }
 
 void ky_physics_apply_impulse(kyPhysicsWorld *pw, uint32_t body_id, kyVec3 impulse, kyVec3 at) {
@@ -229,12 +277,82 @@ void ky_physics_get_body(const kyPhysicsWorld *pw, uint32_t body_id, kyRigidBody
 }
 
 void ky_physics_cast_ray(const kyPhysicsWorld *pw, kyVec3 origin, kyVec3 dir,
-                         float max_t, kyRayHit *out_hit) {
-    KY_UNUSED(pw); KY_UNUSED(origin); KY_UNUSED(dir);
+                          float max_t, kyRayHit *out_hit) {
     if (!out_hit) return;
     out_hit->hit = 0;
     out_hit->t = max_t;
     out_hit->body_id = 0;
+    if (!pw) return;
+
+    kyVec3 inv_dir;
+    inv_dir.x = dir.x != 0.0f ? 1.0f / dir.x : (dir.x > 0 ? 1e30f : -1e30f);
+    inv_dir.y = dir.y != 0.0f ? 1.0f / dir.y : (dir.y > 0 ? 1e30f : -1e30f);
+    inv_dir.z = dir.z != 0.0f ? 1.0f / dir.z : (dir.z > 0 ? 1e30f : -1e30f);
+
+    float best_t = max_t;
+    uint32_t best_id = 0;
+    kyVec3 best_normal = ky_vec3_zero();
+
+    for (int i = 0; i < pw->body_count; i++) {
+        kyPhysBody *b = &pw->bodies[i];
+        if (!b->alive) continue;
+
+        /* Test vs sphere collider */
+        uint32_t cid = b->body.collider_id;
+        kySphere *sph = NULL;
+        for (int j = 0; j < pw->collider_count; j++) {
+            if (pw->colliders[j].alive && (uint32_t)j + 1 == cid) {
+                if (pw->colliders[j].collider.shape == KY_SHAPE_SPHERE) {
+                    sph = &pw->colliders[j].collider.u.sphere;
+                }
+                break;
+            }
+        }
+        if (sph) {
+            kyVec3 oc = ky_vec3_sub(origin, sph->center);
+            float a = ky_vec3_dot(dir, dir);
+            float b2 = 2.0f * ky_vec3_dot(oc, dir);
+            float c = ky_vec3_dot(oc, oc) - sph->radius * sph->radius;
+            float disc = b2 * b2 - 4.0f * a * c;
+            if (disc >= 0.0f) {
+                float t = (-b2 - sqrtf(disc)) / (2.0f * a);
+                if (t > 0.0f && t < best_t) {
+                    best_t = t;
+                    best_id = (uint32_t)(i + 1);
+                    best_normal = ky_vec3_normalize(ky_vec3_sub(
+                        ky_vec3_scale(dir, t), ky_vec3_sub(origin, sph->center)));
+                }
+            }
+        }
+
+        /* Test vs box collider using existing ray-aabb */
+        if (b->aabb_min.x < b->aabb_max.x) {
+            kyAABB aabb = { b->aabb_min, b->aabb_max };
+            float t_aabb;
+            if (ky_ray_aabb(origin, inv_dir, best_t, &aabb, &t_aabb)) {
+                /* More precise sphere test inside AABB for boxes */
+                uint32_t bcid = b->body.collider_id;
+                for (int j = 0; j < pw->collider_count; j++) {
+                    if (pw->colliders[j].alive && (uint32_t)j + 1 == bcid &&
+                        pw->colliders[j].collider.shape == KY_SHAPE_BOX) {
+                        /* Box hit: use AABB hit point as approximation */
+                        if (t_aabb < best_t) {
+                            best_t = t_aabb;
+                            best_id = (uint32_t)(i + 1);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (best_id != 0) {
+        out_hit->hit = 1;
+        out_hit->t = best_t;
+        out_hit->normal = best_normal;
+        out_hit->body_id = best_id;
+    }
 }
 
 void ky_physics_get_aabb(const kyPhysicsWorld *pw, uint32_t body_id,

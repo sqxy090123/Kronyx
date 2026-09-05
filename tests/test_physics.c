@@ -85,10 +85,13 @@ int main(void) {
     ky_physics_get_body(pw, body_id2, &after_zero_g);
     ASSERT(fabs(after_zero_g.linear_velocity.y) < 1e-5f, "zero gravity: no vertical velocity change");
 
-    /* Test: raycast (stub always misses) */
+    /* Test: raycast hits sphere collider */
     kyRayHit hit;
-    ky_physics_cast_ray(pw, (kyVec3){0,0,0}, (kyVec3){0,-1,0}, 100.0f, &hit);
-    ASSERT(hit.hit == 0, "raycast stub returns no hit");
+    /* Ray from below sphere going up: origin(0,0,0) dir(0,1,0), sphere center(0,5,0) radius=1 */
+    ky_physics_cast_ray(pw, (kyVec3){0,0,0}, (kyVec3){0,1,0}, 100.0f, &hit);
+    ASSERT(hit.hit == 1, "raycast hits sphere");
+    ASSERT(hit.t > 3.0f && hit.t < 5.0f, "raycast t near sphere bottom (y=4)");
+    ASSERT(hit.body_id == body_id, "raycast returns correct body_id");
 
     /* Test: null safety */
     ky_physics_step(NULL, dt);

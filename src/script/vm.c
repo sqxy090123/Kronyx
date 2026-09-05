@@ -10,7 +10,8 @@ typedef enum kyOpCode {
     OP_MOVE     = 5, OP_ADD,      OP_SUB,      OP_MUL,      OP_DIV,
     OP_MOD,      OP_NEG,          OP_NOT,      OP_BNOT,     OP_EQ,
     OP_NEQ,      OP_LT,           OP_LE,       OP_GT,       OP_GE,
-    OP_AND,      OP_OR,           OP_CONCAT,   OP_NEWARRAY = 25,
+    OP_AND,      OP_OR,           OP_CONCAT,   OP_BAND = 22, OP_BOR,  OP_BXOR,
+    OP_BSHL,     OP_BSHR,         OP_NEWARRAY = 27,
     OP_GETFIELD = 30,              OP_SETFIELD, OP_GETINDEX, OP_SETINDEX,
     OP_GETGLOBAL = 32,              OP_SETGLOBAL,
     OP_CLOSURE  = 40,              OP_CALL,    OP_TAILCALL, OP_RETURN,
@@ -54,6 +55,8 @@ typedef struct kyArray {
 typedef struct kyNativeEntry {
     kyValue (*fn)(struct kyVM *, kyValue *args, int argc, void *user);
     void    *user;
+    char     ns[64];
+    char     name[64];
 } kyNativeEntry;
 
 #define KY_MAX_STACK 512
@@ -80,6 +83,7 @@ struct kyVM {
     kyProto   protos[KYX_MAX_PROTOS];
     kyClosure *closures[KYX_MAX_PROTOS];
     kyNativeEntry natives[KYX_MAX_REGISTRY];
+    char          *native_names[KYX_MAX_REGISTRY];
     char     *strings[KYX_MAX_STRINGS];
     int       string_count;
     int       stack_top;
@@ -135,14 +139,14 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
     for (int i = 0; i < locals_count && i < argc; i++) {
         vm->stack[base + i] = args[i];
     }
-    while (pc + 3 < proto->code_count) {
+    while (pc + 4 <= proto->code_count) {
         int opcode = proto->code[pc];
         int A = proto->code[pc + 1];
         int B = proto->code[pc + 2];
         int C = proto->code[pc + 3];
         pc += 4;
         if (opcode == OP_GETGLOBAL) {
-            const char *name = proto->strings[B];
+             const char *name = (B >= 0 && B < proto->str_count) ? proto->strings[B] : NULL;
             if (name) {
                 for (int i = 0; i < vm->proto_count; i++) {
                     if (vm->protos[i].name && strcmp(vm->protos[i].name, name) == 0) {
@@ -194,12 +198,21 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                 vm->stack[base + A] = float_val(bd != 0.0 ? to_float(a) / bd : 0.0);
                 break;
             }
+            case OP_MOD: {
+                kyValue a = vm->stack[base + B], b = vm->stack[base + C];
+                double bd = to_float(b);
+                vm->stack[base + A] = float_val(bd != 0.0 ? fmod(to_float(a), bd) : 0.0);
+                break;
+            }
             case OP_NEG:
                 vm->stack[base + A] = float_val(-to_float(vm->stack[base + B]));
                 break;
             case OP_NOT:
                 vm->stack[base + A] = bool_val(vm->stack[base + B].type == KYT_NIL ||
                                                (vm->stack[base + B].type == KYT_BOOL && !vm->stack[base + B].as.ival));
+                break;
+            case OP_BNOT:
+                vm->stack[base + A] = int_val(~(int64_t)to_float(vm->stack[base + B]));
                 break;
             case OP_EQ: {
                 kyValue a = vm->stack[base + B], b = vm->stack[base + C];
@@ -249,6 +262,51 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                 vm->stack[base + A] = truthy ? a : vm->stack[base + C];
                 break;
             }
+            case OP_BAND: {
+                int64_t a = (int64_t)to_float(vm->stack[base + B]);
+                int64_t b = (int64_t)to_float(vm->stack[base + C]);
+                vm->stack[base + A] = int_val(a & b);
+                break;
+            }
+            case OP_BOR: {
+                int64_t a = (int64_t)to_float(vm->stack[base + B]);
+                int64_t b = (int64_t)to_float(vm->stack[base + C]);
+                vm->stack[base + A] = int_val(a | b);
+                break;
+            }
+            case OP_BXOR: {
+                int64_t a = (int64_t)to_float(vm->stack[base + B]);
+                int64_t b = (int64_t)to_float(vm->stack[base + C]);
+                vm->stack[base + A] = int_val(a ^ b);
+                break;
+            }
+            case OP_BSHL: {
+                int64_t a = (int64_t)to_float(vm->stack[base + B]);
+                int64_t n = (int64_t)to_float(vm->stack[base + C]);
+                vm->stack[base + A] = int_val(a << (int)n);
+                break;
+            }
+            case OP_BSHR: {
+                int64_t a = (int64_t)to_float(vm->stack[base + B]);
+                int64_t n = (int64_t)to_float(vm->stack[base + C]);
+                vm->stack[base + A] = int_val(a >> (int)n);
+                break;
+            }
+            case OP_GETFIELD: {
+                /* A=dest, B=obj_reg, C=field_string_idx */
+                kyValue obj = vm->stack[base + B];
+                const char *fname = (C >= 0 && C < proto->str_count) ? proto->strings[C] : NULL;
+                if (obj.type == KYT_NATIVE && fname) {
+                    kyNativeEntry *ne = (kyNativeEntry *)obj.as.native;
+                    if (ne && ne->fn && strcmp(ne->name, fname) == 0) {
+                        vm->stack[base + A] = obj;
+                        break;
+                    }
+                }
+                /* fallback: nil */
+                vm->stack[base + A] = nil_val();
+                break;
+            }
             case OP_JMPIF:
                 if (vm->stack[base + A].as.ival) pc += B - 4;
                 break;
@@ -270,6 +328,12 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                         kyValue ret = call_proto(vm, cl->proto, call_args, nargs);
                         vm->stack[base + fn_reg] = ret;
                     }
+                } else if (fn.type == KYT_NATIVE) {
+                    kyNativeEntry *ne = (kyNativeEntry *)fn.as.native;
+                    if (ne && ne->fn) {
+                        kyValue *call_args = &vm->stack[base + fn_reg + 1];
+                        vm->stack[base + fn_reg] = ne->fn(vm, call_args, nargs, ne->user);
+                    }
                 }
                 break;
             }
@@ -283,12 +347,20 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                 return ret;
             }
             case OP_GETGLOBAL: {
-                const char *name = proto->strings[B];
+                const char *name = (B >= 0 && B < proto->str_count) ? proto->strings[B] : NULL;
                 if (!name) break;
                 int found = 0;
                 for (int i = 0; i < vm->proto_count && !found; i++) {
                     if (vm->protos[i].name && strcmp(vm->protos[i].name, name) == 0) {
                         vm->stack[base + A] = (kyValue){KYT_FUNCTION, .as.closure = vm->closures[i]};
+                        found = 1;
+                    }
+                }
+                /* also look up native functions registered under this name */
+                for (int i = 0; i < vm->proto_count && i < KYX_MAX_REGISTRY && !found; i++) {
+                    if (vm->natives[i].fn &&
+                        strcmp(vm->natives[i].name, name) == 0) {
+                        vm->stack[base + A] = (kyValue){KYT_NATIVE, .as.native = (void*)&vm->natives[i]};
                         found = 1;
                     }
                 }
@@ -298,7 +370,7 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                 break;
             }
             case OP_SETGLOBAL: {
-                const char *name = proto->strings[B];
+                const char *name = (B >= 0 && B < proto->str_count) ? proto->strings[B] : NULL;
                 if (!name) break;
                 for (int i = 0; i < vm->proto_count; i++) {
                     if (vm->protos[i].name && strcmp(vm->protos[i].name, name) == 0) {
@@ -311,6 +383,22 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
             case OP_EXIT:
                 vm->stack_top = saved_top;
                 return nil_val();
+            case OP_NATIVECALL: {
+                /* A=dest, B=nargs|(name_idx<<8), C=ns_string_idx */
+                const char *ns = (C >= 0 && C < proto->str_count) ? proto->strings[C] : NULL;
+                const char *nm = (B >= 256 && (B >> 8) < proto->str_count) ? proto->strings[B >> 8] : NULL;
+                int nargs = B & 0xFF;
+                kyValue *arg_base = &vm->stack[base + A + 1];
+                for (int i = 0; i < vm->proto_count && i < KYX_MAX_REGISTRY; i++) {
+                    if (vm->natives[i].fn &&
+                        strcmp(vm->natives[i].ns, ns ? ns : "") == 0 &&
+                        strcmp(vm->natives[i].name, nm ? nm : "") == 0) {
+                        vm->stack[base + A] = vm->natives[i].fn(vm, arg_base, nargs, vm->natives[i].user);
+                        break;
+                    }
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -336,7 +424,6 @@ kyVM *ky_vm_create(const void *info) {
 
 void ky_vm_destroy(kyVM *vm) {
     if (vm) {
-        for (int i = 0; i < vm->string_count; i++) free((void *)vm->strings[i]);
         for (int i = 0; i < vm->proto_count; i++) {
             free(vm->protos[i].code);
             free(vm->protos[i].constants);
@@ -345,6 +432,8 @@ void ky_vm_destroy(kyVM *vm) {
                 free(vm->protos[i].strings[j]);
             free(vm->protos[i].strings);
         }
+        for (int i = 0; i < vm->proto_count && i < KYX_MAX_REGISTRY; i++)
+            free(vm->native_names[i]);
         free(vm);
     }
 }
@@ -364,8 +453,9 @@ int ky_vm_load_string(kyVM *vm, const char *src, const char *name) {
         ts.count++;
         if (ts.tokens[i].kind == KYX_TK_EOF) break;
     }
+    int lex_err = kyx_lexer_has_error(lx);
     kyx_lexer_destroy(lx);
-    if (kyx_lexer_has_error(lx)) {
+    if (lex_err) {
         snprintf(vm->error_msg, sizeof(vm->error_msg), "lex error");
         return -1;
     }
@@ -425,12 +515,14 @@ int ky_vm_call(kyVM *vm, const char *func_name, kyValue *args, int argc, kyValue
 }
 
 void ky_vm_register_native(kyVM *vm, const char *ns, const char *name, kyNativeFn fn, void *user) {
-    KY_UNUSED(ns); KY_UNUSED(name);
     if (!vm || !fn) return;
     int id = vm->proto_count++;
     if (id < KYX_MAX_REGISTRY) {
         vm->natives[id].fn = fn;
         vm->natives[id].user = user;
+        strncpy(vm->natives[id].ns, ns ? ns : "", sizeof(vm->natives[id].ns) - 1);
+        strncpy(vm->natives[id].name, name ? name : "", sizeof(vm->natives[id].name) - 1);
+        vm->native_names[id] = strdup(ns ? ns : "");
     }
 }
 
@@ -543,7 +635,6 @@ static void compile_statement(kyCompileState *cs, kyAstNode *stmt) {
             break;
         }
         case KY_AST_IF_STMT: {
-            int cond_reg = cs->local_count;
             int temp_reg = cs->local_count + 1;
             compile_expression(cs, stmt->as.if_stmt.cond, temp_reg);
             int jmp_idx = cs->code_count;
@@ -567,7 +658,6 @@ static void compile_statement(kyCompileState *cs, kyAstNode *stmt) {
         }
         case KY_AST_WHILE_STMT: {
             int loop_start = cs->code_count;
-            int cond_reg = cs->local_count;
             int temp_reg = cs->local_count + 1;
             compile_expression(cs, stmt->as.while_stmt.cond, temp_reg);
             int jmp_idx = cs->code_count;
@@ -582,7 +672,6 @@ static void compile_statement(kyCompileState *cs, kyAstNode *stmt) {
             if (stmt->as.for_stmt.init) compile_statement(cs, stmt->as.for_stmt.init);
             int loop_start = cs->code_count;
             if (stmt->as.for_stmt.cond) {
-                int cond_reg = cs->local_count;
                 int temp_reg = cs->local_count + 1;
                 compile_expression(cs, stmt->as.for_stmt.cond, temp_reg);
                 int jmp_idx = cs->code_count;
@@ -695,6 +784,16 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
                 compile_emit(cs, 20, dest, lhs, rhs);
             } else if (strcmp(node->as.binop.op, "||") == 0) {
                 compile_emit(cs, 21, dest, lhs, rhs);
+            } else if (strcmp(node->as.binop.op, "&") == 0) {
+                compile_emit(cs, 22, dest, lhs, rhs);
+            } else if (strcmp(node->as.binop.op, "|") == 0) {
+                compile_emit(cs, 23, dest, lhs, rhs);
+            } else if (strcmp(node->as.binop.op, "^") == 0) {
+                compile_emit(cs, 24, dest, lhs, rhs);
+            } else if (strcmp(node->as.binop.op, "<<") == 0) {
+                compile_emit(cs, 25, dest, lhs, rhs);
+            } else if (strcmp(node->as.binop.op, ">>") == 0) {
+                compile_emit(cs, 26, dest, lhs, rhs);
             }
             break;
         }
@@ -707,19 +806,29 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
                 int val = dest;
                 compile_expression(cs, node->as.unop.operand, val);
                 compile_emit(cs, 12, dest, val, 0);
+            } else if (strcmp(node->as.unop.op, "~") == 0) {
+                int val = dest;
+                compile_expression(cs, node->as.unop.operand, val);
+                compile_emit(cs, 13, dest, val, 0);
             }
             break;
         }
         case KY_AST_EXPR_CALL: {
             int tmp_reg = dest;
-            // 先编译参数，再编译callee，避免callee被覆盖
             int nargs = node->as.call.arg_count;
             for (int i = 0; i < nargs; i++) {
                 compile_expression(cs, node->as.call.args[i], tmp_reg + 1 + i);
             }
-            // callee编译到dest，此时参数已在tmp_reg+1处，不会被覆盖
             compile_expression(cs, node->as.call.callee, tmp_reg);
             compile_emit(cs, 41, tmp_reg, nargs + 1, 0);
+            break;
+        }
+        case KY_AST_EXPR_FIELD: {
+            /* compile obj.field: get obj, then getfield by string index */
+            int obj_reg = dest;
+            compile_expression(cs, node->as.field.obj, obj_reg);
+            int field_idx = compile_add_string(cs, node->as.field.field);
+            compile_emit(cs, 30, dest, obj_reg, field_idx);
             break;
         }
         default:
@@ -755,7 +864,7 @@ kyProto *kyx_compile(kyVM *vm, kyAstNode *root, char *err_buf, int err_buf_size)
         int id = vm->proto_count++;
         if (id < KYX_MAX_PROTOS && cs.code) {
             size_t code_size = cs.code_count * sizeof(int);
-            vm->protos[id].code = (kyInstr *)malloc(code_size);
+            vm->protos[id].code = malloc(code_size);
             if (vm->protos[id].code) {
                 memcpy((void*)vm->protos[id].code, cs.code, code_size);
             }

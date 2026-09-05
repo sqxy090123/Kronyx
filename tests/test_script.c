@@ -18,9 +18,6 @@ static int failures = 0;
 static kyValue make_int(int64_t i) {
     kyValue v; v.type = KYT_INT; v.as.ival = i; return v;
 }
-static kyValue make_float(double f) {
-    kyValue v; v.type = KYT_FLOAT; v.as.fval = f; return v;
-}
 static kyValue make_nil(void) {
     kyValue v; memset(&v, 0, sizeof(v)); v.type = KYT_NIL; return v;
 }
@@ -114,9 +111,9 @@ static void test_lexer_operators(void) {
     ASSERT(_t12.kind == KYX_TK_AND,   "token: &&");
     ASSERT(_t13.kind == KYX_TK_OR,    "token: ||");
     ASSERT(_t14.kind == KYX_TK_NOT,   "token: !");
-    ASSERT(_t15.kind == KYX_TK_BNOT,  "token: &");
-    ASSERT(_t16.kind == KYX_TK_BNOT,  "token: |");
-    ASSERT(_t17.kind == KYX_TK_BNOT,  "token: ^");
+    ASSERT(_t15.kind == KYX_TK_BAND,  "token: &");
+    ASSERT(_t16.kind == KYX_TK_BOR,   "token: |");
+    ASSERT(_t17.kind == KYX_TK_BXOR,  "token: ^");
     ASSERT(_t18.kind == KYX_TK_SHL,   "token: <<");
     ASSERT(_t19.kind == KYX_TK_SHR,   "token: >>");
     ASSERT(_t20.kind == KYX_TK_EOF,   "EOF");
@@ -405,6 +402,86 @@ static void test_compile_exec(void) {
     }
 }
 
+static void test_bitwise_ops(void) {
+    /* Test: bitwise AND */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        const char *src = "function f(a, b) { return a & b; }";
+        ky_vm_load_string(vm, src, "bitand");
+        kyValue args[2] = { make_int(0b1100), make_int(0b1010) };
+        kyValue ret;
+        ky_vm_call(vm, "f", args, 2, &ret);
+        ASSERT(ret.as.fval == 8.0, "0b1100 & 0b1010 == 8");
+        ky_vm_destroy(vm);
+    }
+    /* Test: bitwise OR */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        const char *src = "function f(a, b) { return a | b; }";
+        ky_vm_load_string(vm, src, "bitor");
+        kyValue args[2] = { make_int(0b1100), make_int(0b1010) };
+        kyValue ret;
+        ky_vm_call(vm, "f", args, 2, &ret);
+        ASSERT(ret.as.fval == 14.0, "0b1100 | 0b1010 == 14");
+        ky_vm_destroy(vm);
+    }
+    /* Test: bitwise XOR */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        const char *src = "function f(a, b) { return a ^ b; }";
+        ky_vm_load_string(vm, src, "bitxor");
+        kyValue args[2] = { make_int(0b1100), make_int(0b1010) };
+        kyValue ret;
+        ky_vm_call(vm, "f", args, 2, &ret);
+        ASSERT(ret.as.fval == 6.0, "0b1100 ^ 0b1010 == 6");
+        ky_vm_destroy(vm);
+    }
+    /* Test: bitwise NOT */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        const char *src = "function f(a) { return ~a; }";
+        ky_vm_load_string(vm, src, "bitnot");
+        kyValue args[1] = { make_int(5) };
+        kyValue ret;
+        ky_vm_call(vm, "f", args, 1, &ret);
+        ASSERT(ret.as.fval == -6.0, "~5 == -6");
+        ky_vm_destroy(vm);
+    }
+    /* Test: left shift */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        const char *src = "function f(a, n) { return a << n; }";
+        ky_vm_load_string(vm, src, "shl");
+        kyValue args[2] = { make_int(1), make_int(4) };
+        kyValue ret;
+        ky_vm_call(vm, "f", args, 2, &ret);
+        ASSERT(ret.as.fval == 16.0, "1 << 4 == 16");
+        ky_vm_destroy(vm);
+    }
+    /* Test: right shift */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        const char *src = "function f(a, n) { return a >> n; }";
+        ky_vm_load_string(vm, src, "shr");
+        kyValue args[2] = { make_int(32), make_int(2) };
+        kyValue ret;
+        ky_vm_call(vm, "f", args, 2, &ret);
+        ASSERT(ret.as.fval == 8.0, "32 >> 2 == 8");
+        ky_vm_destroy(vm);
+    }
+    /* Test: modulo */
+    {
+        kyVM *vm = ky_vm_create(NULL);
+        const char *src = "function f(a, b) { return a % b; }";
+        ky_vm_load_string(vm, src, "mod");
+        kyValue args[2] = { make_int(17), make_int(5) };
+        kyValue ret;
+        ky_vm_call(vm, "f", args, 2, &ret);
+        ASSERT(ret.as.fval == 2.0, "17 % 5 == 2");
+        ky_vm_destroy(vm);
+    }
+}
+
 int main(void) {
     printf("=== Script (kyx) Test ===\n");
 
@@ -419,6 +496,7 @@ int main(void) {
     test_vm_register_native();
     test_null_safety();
     printf("10\n"); test_compile_exec();
+    test_bitwise_ops();
 
     printf("\n=== %d tests ran, %d failures ===\n", assertions, failures);
     return failures == 0 ? 0 : 1;

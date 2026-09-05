@@ -84,3 +84,27 @@ Entries discovered by the Agent during task execution should follow this format:
   - Softening factor ε = 0.01 prevents singularity
   - Max 64 concurrent force fields per physics world
   - Force field API: add, remove, get, set, count
+
+[Project Knowledge Summary]
+- Date: 2026-09-04
+- Context: Discovered by Agent while checking code and fixing bugs across physics, script, and VM modules
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - physics.h 头文件中 force field API 声明在 #endif 之后，会导致编译错误；已修复为在 #endif 之前
+  - script.c lexer 中 & | ^ 三个运算符都映射到 KYX_TK_BNOT，需分别映射到 KYX_TK_BAND/KYX_TK_BOR/KYX_TK_BXOR
+  - vm.c ky_vm_register_native 之前不存储 ns/name，现已修复，支持按名称查找原生函数
+  - vm.c OP_GETGLOBAL 现在同时查找 kyx 函数和原生函数（KYT_NATIVE）
+  - vm.c OP_CALL 现在支持调用 KYT_NATIVE 类型值
+  - vm.c 新增 OP_BAND(22)/OP_BOR(23)/OP_BXOR(24)/OP_BSHL(25)/OP_BSHR(26) 位运算指令
+  - vm.c compile_expression 新增 KY_AST_EXPR_FIELD 编译支持和位运算编译
+  - physics.c ky_physics_step 中 force field 应用在 position integration 之后（错误顺序），已修正为前置
+  - physics.c ky_physics_cast_ray 从空 stub 实现为 sphere+AABB 射线检测
+  - physics.c ky_physics_step 新增 SAP pair 后的窄相位碰撞解决（AABB 重叠推开）
+  - 构建命令: cmake -B build && cmake --build build -j2
+  - 测试命令: ctest --test-dir build --output-on-failure
+  - 当前状态: 全部 6 个测试套件通过 (core, math, ecs, render, physics, script)
+  - 安全审计完成(2026-09-04): 修复了1个UAF(lexer destroy前读取)、1个越界读取(loop条件+1)、5处缺少边界检查、1段死代码
+  - vm.c中proto->strings数组访问必须检查 B/C < proto->str_count
+  - call_proto的while循环条件应为 pc+4 <= proto->code_count
+  - 安全审计+警告清理完成(2026-09-04): 修复UAF/OOB死代码/缺失边界检查; 清除全部编译器警告
+  - parser.c find_binop开关需覆盖所有二元运算符token(KYX_TK_BAND/BOR/BXOR/MODEQ)

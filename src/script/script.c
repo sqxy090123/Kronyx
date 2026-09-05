@@ -56,7 +56,7 @@ static kyTokenKind token_kind_from_name(const char *name) {
 static void skip_forced_comments(kyLexer *lx) {
     const char *p = lx->src + lx->pos;
     while (1) {
-        /* Look for opening marker [/*<!-- */
+        /* Look for opening marker [ <!-- */
         if (p[0] != '[' || p[1] != '/' || p[2] != '*' || p[3] != '<' ||
             p[4] != '!' || p[5] != '-') break;
         /* Look for closing marker -- > * / ] */
@@ -192,7 +192,6 @@ kyToken kyx_lexer_next(kyLexer *lx) {
 
     if (isdigit(c) || (c == '.' && isdigit(peek_n(lx, 1)))) {
         int got_dot = 0;
-        int hex = 0;
         if (c == '0' && peek_n(lx, 1) == 'x') {
             /* hex integer: 0xFF */
             advance(lx); advance(lx);
@@ -284,12 +283,12 @@ kyToken kyx_lexer_next(kyLexer *lx) {
             return make_token(lx, KYX_TK_GT, start_pos, start_line, start_col);
         case '&': advance(lx);
             if (peek(lx) == '&') { advance(lx); return make_token(lx, KYX_TK_AND, start_pos, start_line, start_col); }
-            return make_token(lx, KYX_TK_BNOT, start_pos, start_line, start_col);
+            return make_token(lx, KYX_TK_BAND, start_pos, start_line, start_col);
         case '|': advance(lx);
             if (peek(lx) == '|') { advance(lx); return make_token(lx, KYX_TK_OR, start_pos, start_line, start_col); }
-            return make_token(lx, KYX_TK_BNOT, start_pos, start_line, start_col);
+            return make_token(lx, KYX_TK_BOR, start_pos, start_line, start_col);
         case '^': advance(lx);
-            return make_token(lx, KYX_TK_BNOT, start_pos, start_line, start_col);
+            return make_token(lx, KYX_TK_BXOR, start_pos, start_line, start_col);
         case '~': advance(lx);
             return make_token(lx, KYX_TK_BNOT, start_pos, start_line, start_col);
         case '(': advance(lx); return make_token(lx, KYX_TK_LPAREN, start_pos, start_line, start_col);

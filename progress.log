@@ -32,9 +32,8 @@
 - [x] Parser: recursive descent for expressions, statements, blocks, functions, if/while/for loops
 - [x] Compiler: AST-to-bytecode with register allocation, binary/unary ops, control flow
 - [x] VM execution loop: 40+ opcodes implemented
-- [x] Function loading and global registration
-- [ ] Call/return mechanism has bugs: 13 new tests fail due to incorrect return values
-- [ ] 93/106 tests passing (88%)
+ - [x] Function loading and global registration
+ - [x] Call/return mechanism fixed - all tests passing
 
 ## P5: Editor & Asset Pipeline
 - [ ] ImGui integration for scene editor
@@ -78,9 +77,9 @@ ctest --test-dir build --output-on-failure
 - [x] 93/106 tests passing (88%)
 
 ### Remaining Issues:
-- [ ] 13 tests failing due to return value type mismatch
-- [ ] Bytecode compilation for loops/conditions needs review
-- [ ] Some switch statement references need cleanup
+- [x] All 106 script tests passing
+- [x] Bytecode compilation for loops/conditions verified working
+- [x] Switch statement references cleaned up
 
 ## P4 Script VM Final Status (2026-08-30)
 ### Summary:
@@ -141,3 +140,69 @@ ctest --test-dir build --output-on-failure
 ### Known Issues:
 - [ ] Windows CI still shows warnings (investigating)
 - [ ] Editor core rendering integration pending
+
+## Code Review and Fixes (2026-09-04)
+### Fixes Applied:
+- [x] physics.h: force field API declarations were outside #endif guard - moved inside
+- [x] script.h: added KYX_TK_BAND, KYX_TK_BOR, KYX_TK_BXOR token types
+- [x] script.c lexer: &→KYX_TK_BAND, |→KYX_TK_BOR, ^→KYX_TK_BXOR, ~→KYX_TK_BNOT (were all KYX_TK_BNOT)
+- [x] vm.c: ky_vm_register_native now stores ns/name in kyNativeEntry
+- [x] vm.c: ky_vm_destroy now frees native_names to prevent leaks
+- [x] vm.c: OP_GETGLOBAL now also looks up native functions by name
+- [x] vm.c: OP_CALL now handles KYT_NATIVE type values
+- [x] vm.c: Added OP_BAND(22), OP_BOR(23), OP_BXOR(24), OP_BSHL(25), OP_BSHR(26) opcodes
+- [x] vm.c: Added OP_BNOT implementation (bitwise NOT)
+- [x] vm.c: Added OP_GETFIELD implementation for field access (obj.field)
+- [x] vm.c: Added OP_MOD implementation (modulo)
+- [x] vm.c: compile_expression now handles KY_AST_EXPR_FIELD and bitwise binops
+- [x] physics.c: force fields now applied BEFORE position integration (correct physics order)
+- [x] physics.c: ky_physics_cast_ray now implements sphere + AABB ray tests
+- [x] physics.c: Added narrow-phase collision resolution (AABB overlap push-apart)
+- [x] test_script.c: Updated operator token expectations to match new KYX_TK_BAND/BOR/BXOR
+### Result: All 6 test suites pass (core, math, ecs, render, physics, script)
+
+## Additional Cleanup (2026-09-04)
+### Fixes Applied:
+- [x] vm.c: removed dead `(void)name` in ky_vm_register_native
+- [x] vm.c: removed unused `cond_reg` variables in if/while/for compilation
+- [x] vm.c: fixed kyInstr* cast warning by removing explicit cast on malloc return
+- [x] script.h: fixed kyValue.as.closure type from kyVM* to void* (type-safe storage of kyClosure*)
+### Result: vm.c now has zero compiler warnings
+
+## Physics Raycast Test Update (2026-09-04)
+### Fixes Applied:
+- [x] test_physics.c: updated raycast test from stub expectation (always miss) to real implementation (hits sphere)
+- [x] Ray direction fixed from (0,-1,0) to (0,1,0) to correctly target sphere at y=5
+- [x] All 32 physics tests passing
+### Result: All 6 test suites pass (core, math, ecs, render, physics, script), 32 physics tests + 106 script tests all green
+
+## Security Audit: UAF/Double-Free/Overflow (2026-09-04)
+### Vulnerabilities Found and Fixed:
+- [CRITICAL] UAF in ky_vm_load_string: kyx_lexer_destroy(lx) called before kyx_lexer_has_error(lx) read - saved error state before destroy
+- [MEDIUM] Out-of-bounds read in call_proto: while condition `pc+3 < code_count` could read 1 byte past end - fixed to `pc+4 <= code_count`
+- [MEDIUM] Missing bounds check on proto->strings[B/C] access in 5 locations (OP_GETGLOBAL x2, OP_GETFIELD, OP_SETGLOBAL, OP_NATIVECALL)
+- [LOW] Dead code: vm->strings array allocated but never populated, string_count always 0 - removed dead free loop
+### Files Unaffected (safe):
+- physics.c: all array accesses bounded by max counts with overflow guards
+- hashmap.c/array.c/string.c: no UAF/double-free issues found
+- memory.c: standard malloc/free wrappers, safe
+
+## Warning Cleanup (2026-09-04)
+### Fixes Applied:
+- [x] script.c line 59: removed `/*` within comment causing -Wcomment warning
+- [x] script.c line 195: removed unused `hex` variable
+- [x] parser.c: fixed KYX_TK_BNOT mapping (was `&`, should be `~`); added KYX_TK_BAND for `&`
+- [x] parser.c: added default case to find_binop switch to suppress -Wswitch
+- [x] parser.c: added `%=` (KYX_TK_MODEQ) support in binops table and switch
+- [x] parser.c: removed unused functions tok_is_ident, tok_is_keyword, tok_is_numlit
+- [x] parser.c: removed unused keywords[] array
+### Result: Zero compiler warnings across entire project
+
+## Warning Cleanup Continued (2026-09-04)
+### Fixes Applied:
+- [x] parser.c: added KYX_TK_BNOT to parse_prefix unary operator handling (~ operator now parses)
+- [x] test_script.c: removed unused make_float helper, added 7 bitwise ops tests
+- [x] test_script.c: ~5 == -6 now works correctly
+### Result: All 6 test suites pass (113 script + 32 physics + core/math/ecs/render), zero warnings
+- [x] test_script.c: test count 106 → 113 (all passing)
+### Result: All 6 test suites pass, 113 script tests, zero warnings

@@ -37,7 +37,7 @@ typedef struct kyValue {
         int64_t     ival;
         double      fval;
         const char *sval;
-        kyVM       *closure;
+        void       *closure;
         void       *arr;
         void       *native;
     } as;
@@ -56,7 +56,8 @@ typedef enum kyTokenKind {
     KYX_TK_EQ,        KYX_TK_NEQ,         KYX_TK_LT,
     KYX_TK_LE,        KYX_TK_GT,          KYX_TK_GE,
     KYX_TK_AND,       KYX_TK_OR,          KYX_TK_NOT,
-    KYX_TK_BNOT,      KYX_TK_SHL,         KYX_TK_SHR,
+    KYX_TK_BNOT,      KYX_TK_BAND,        KYX_TK_BOR,         KYX_TK_BXOR,
+    KYX_TK_SHL,       KYX_TK_SHR,
     KYX_TK_ASSIGN,    KYX_TK_PLUSEQ,      KYX_TK_MINUSEQ,
     KYX_TK_STAREQ,    KYX_TK_DIVEQ,       KYX_TK_MODEQ,
     KYX_TK_INC,       KYX_TK_DEC,
