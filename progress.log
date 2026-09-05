@@ -3,28 +3,28 @@
 ## P1: Core Foundations
 - [x] Define project structure and CMake configuration
 - [x] Implement core type system (kyValue, kyString, kyArray)
-- [x] Implement object model (kyObject with metatables)
-- [x] Implement VM bytecode execution engine
-- [x] Implement garbage collector
-- [x] Implement stdlib basics (math, string, table)
+- [ ] Implement object model (kyObject with metatables)  -- kyValue 是 tagged union，无对象/metatable 概念
+- [x] Implement VM bytecode execution engine (kyx script VM)
+- [ ] Implement garbage collector  -- 脚本内存为 strdup/free 手动管理
+- [ ] Implement stdlib basics (math, string, table)  -- native 仅 std.print
 - [x] Implement kyx scripting language parser
 
 ## P2: Rendering & ECS
 - [x] Implement basic ECS framework
-- [x] Implement Transform component
-- [x] Implement Renderer component
-- [x] Implement basic 2D rendering pipeline
-- [x] Implement Sprite component
-- [x] Implement Camera system
+- [ ] Implement Transform component  -- ecs.h 为纯框架，零预定义组件
+- [ ] Implement Renderer component
+- [ ] Implement basic 2D rendering pipeline  -- 现有 RHI 后端抽象 + console/GL 实现，无 2D 层
+- [ ] Implement Sprite component
+- [ ] Implement Camera system
 - [x] Implement basic physics (AABB collision)
 
 ## P3: Physics & Animation
 - [x] Implement rigid body physics
 - [x] Implement collision detection (SAP broadphase)
-- [x] Implement basic constraints (joints)
-- [x] Implement sprite animation system
-- [x] Implement particle system
-- [x] Implement skeletal animation foundation
+- [ ] Implement basic constraints (joints)  -- 查无实现，physics.h 无 joint API
+- [ ] Implement sprite animation system  -- 查无实现
+- [ ] Implement particle system  -- 查无实现
+- [ ] Implement skeletal animation foundation  -- 查无实现
 - [x] Add unit tests for all components
 
 ## P4: Scripting + UI
@@ -43,9 +43,11 @@
 - [ ] Visual scripting foundation
 
 ## P6: Examples + Vulkan
-- [ ] 2D platformer demo
+- [ ] 2D platformer demo（前置：Transform/Sprite 组件 + 2D 管线，见 P2 缺口）
 - [ ] 3D navigation demo
-- [ ] Vulkan backend skeleton (RHI abstraction complete, implementation deferred)
+- [x] Render RHI 双后端落地 (2026-09-05)：22 API vtable 抽象 + console 调试后端 + GL/EGL 无头后端（KY_HAS_EGL 编译开关，surfaceless pbuffer + GLES3，glReadPixels 像素级验证）；Vulkan 仅枚举预留，实现待真 GPU 环境
+- [x] Game packaging system (2026-09-05)：ky_pack 支持 exe/npm/jar（apk not-supported），test_pack 端到端验证
+- [x] Script engine hardening (2026-09-05)：全局变量系统重构（隐式 __top__ proto + gvar 名字表）、字符串字面量/native 直发/局部名寄存器分配修复，test_global_vars 回归
 - [ ] Final integration test
 
 ---
@@ -102,10 +104,12 @@ ctest --test-dir build --output-on-failure
 
 ## Known Issues
 
-- P4 Script VM call/return mechanism has bugs
-- Function calls return incorrect values (-1.0 instead of expected results)
-- Bytecode generation is correct but VM execution has issues
-- Full test suite may hang, needs investigation
+- 脚本引擎无 GC：字符串/全局名 strdup 手动管理，长驻 VM 存在累积分配
+- ADD/SUB/MUL 运行时统一输出 double（int 类型不保留）
+- 渲染命令列表无 cancel API：ky_rd_begin 后不 submit 即泄漏；cl 首字段=rd 的隐式契约缺注释；console 后端 draw_indexed 打印 "verts" 术语误导
+- 编辑器（tools/editor）有骨架但 KYR_BUILD_EDITOR 默认 OFF，未纳入 CI
+- 输入/窗口事件系统缺失：无 ky_event/ky_input API，物理无碰撞回调导出
+- 2026-09-05 核查：P1-P3 曾有 8 项虚勾已改回（object model/GC/stdlib、Transform/Renderer/Sprite/Camera/2D 管线、joints/动画/粒子）
 
 ## P4 Continuation: Force Field System
 - [x] Design force field data structures (kyForceField)
@@ -206,3 +210,82 @@ ctest --test-dir build --output-on-failure
 ### Result: All 6 test suites pass (113 script + 32 physics + core/math/ecs/render), zero warnings
 - [x] test_script.c: test count 106 → 113 (all passing)
 ### Result: All 6 test suites pass, 113 script tests, zero warnings
+
+## Refactor Dedup (2026-09-05)
+- [x] ecs.c: helpers `comp_type`/`slot_at`/`arch_at`/`arch_has_type`/`find_comp`; add/get/remove/view 共用查找
+- [x] ecs.h: 修复 `kyWorld` 与 API 声明粘连
+- [x] physics.c: `find_force_field`/`body_by_id`; 力场 CRUD 去重; 速度积分用 vec3 helper; raycast 共用 collider 查找
+- [x] script.c: 关键字表合并为 `{name, kind}`，去掉二次映射
+- [x] parser.c: `tok_dup` 去重复字符串拷贝; 删除 find_binop 死代码
+- [x] vm.c: `proto_str`/`to_int`; 位运算 opcode 合并; 截断 snprintf 警告
+- [x] string.c: `ky_string_cstr` 三元化
+- [x] 6/6 测试通过
+
+## Render Pipeline Stub -> Console Backend (2026-09-05)
+- [x] render.h: 精简为仅 `struct kyRenderDevice` 完整定义（删除过时 kyPipelineImpl）
+- [x] render.c: 从 malloc(1) stub 升级为 console-rendering backend
+  - `kyBufferImpl`: 真实 size/data/dynamic 字段，create 时 malloc+memcpy
+  - `kyTextureImpl`: w/h/channels 真实字段
+  - `kyShaderImpl`: vs_size/fs_size
+  - `kyPipelineImpl`: depth_test/depth_write/cull_mode/blend_on/blend_color
+  - `kyCommandListImpl`: 完整状态（pipeline/vbo_stride/textures/blend/depth）
+  - `kyRenderDeviceGL`: width/height/frame_count
+  - `ky_rd_clear`: 输出 CLEAR 行
+  - `ky_cmd_draw_indexed/draw_array`: 输出 DREW 行 + 渲染状态
+  - `ky_rd_present`: 帧计数 + FRAME 行
+- [x] test_render.c: backend 名称断言更新为 `opengl3.3-stub`
+- [x] test_render_demo.c: 60 帧渲染循环 demo（clear -> set_pipeline -> draw -> submit -> present）
+- [x] CMakeLists.txt: 添加 ky_test_render_demo 目标
+- [x] 6/6 测试通过，demo 运行正常
+
+## Render Backend VTable 抽象层 (2026-09-05)
+- [x] 公共 API: `KY_RENDERER_CONSOLE` 枚举 + `ky_rd_backend()` 查询函数
+- [x] `render_backend.h`: 22 个函数指针的 `kyRenderBackend` vtable 结构体 + `struct kyRenderDevice` 含 `const kyRenderBackend *vt` 字段
+- [x] `render.c`: 纯调度层，所有 API 通过 `rd->vt->xxx()` 分发；command list 首字段存 `kyRenderDevice*` 供 `ky_cmd_*` 回查
+- [x] `console_backend.c`: console 后端完整实现（printf 输出帧/绘制/清屏信息）
+- [x] `gl_backend.c`: GL 后端骨架（stub，无 GLFW/GLAD 依赖，后续接入时填充真实 GL 调用）
+- [x] `render.h` 内部头: 仅 `#include "render_backend.h"`
+- [x] test_render.c: 同时测试 console + GL 两个后端创建/销毁，新增 `ky_rd_backend()` 断言
+- [x] 6/6 测试全绿，demo 3 帧渲染正常
+
+## math.c 精简 (2026-09-05)
+- [x] `ky_quat_rotate`: 16 行手工四元数展开 → 5 行复用 `ky_quat_mul(q*p, conj(q))`，语义等价（q*p*q⁻¹）
+- [x] `ky_ray_aabb`: 32 行三轴展开 slab 检测 → 18 行数组化循环，逐轴 swap+收敛
+- [x] 6/6 测试全绿
+
+## vm.c 解释器循环精简 (2026-09-05)
+- [x] 新增 `val_truthy`/`val_eq` helpers，消除 OP_NOT/AND/OR 3 处 truthy 重复 + OP_EQ/NEQ 2 处 11 行相等逻辑重复
+- [x] 删除 switch 前的 OP_GETGLOBAL if 块（死代码：switch 内有含 natives 查找 + nil fallback 的完整版本）
+- [x] OP_LT/LE/GT/GE 4 case 合并；OP_ADD/SUB/MUL 3 case 合并；OP_BAND/BOR/BXOR/BSHL/BSHR 5 case 合并
+- [x] 882 → 836 行，6/6 测试全绿
+
+## 打包器 ky_pack + 脚本引擎关键 bug 修复 (2026-09-05)
+- [x] 新增 `include/kronyx/pack.h` + `src/pack/pack.c`：`ky_pack()` 支持 KY_PACK_EXE/NPM/JAR/APK
+- [x] exe：脚本嵌入 C 数组 + 生成 main 入口（注册 std.print）→ cc 编译链接 libky_engine.a → 真实可执行文件
+- [x] npm：package.json + bin/cli.js（平台二进制探测）+ assets/game.kyx
+- [x] jar：META-INF/MANIFEST.MF + assets → zip 格式（系统 zip 命令）
+- [x] apk：占位返回"not supported yet"
+- [x] test_pack.c：exe 真实编译运行输出验证 + npm 目录结构 + jar 内容解包验证，7/7 全绿
+- [x] **修复脚本引擎隐藏 bug（被 test_script 掩盖，std.print 从未工作过）**：
+  - 编译器对 `ident.field(args)` 直发 OP_NATIVECALL(61)（原编译成 GETGLOBAL+GETFIELD+CALL 静默失败链）
+  - 新增 OP_LOADSTRING(28)：字符串字面量原 emit 到 opcode 8（OP_MUL!），运行时从 proto strings 表加载
+  - compile_add_string_n：token.sval 无 NUL 终止，按 token.len-2 复制（原 strlen 溢出到源尾）
+- [x] 已知遗留：GETGLOBAL 只查函数/native，顶层 `var` 全局变量读写仍残废（globals 表按 proto 索引建模错误），后续修
+
+## 全局变量系统修复 (2026-09-05)
+- [x] 根因一：kyx_compile 只编译 FUNC_DECL，顶层语句从未生成字节码 → 新增隐式 `__top__` proto，ky_vm_call 首次调用前自动执行（top_ran 标志防重复）
+- [x] 根因二：compile_alloc_local 把局部变量名混进 strings 常量池、借索引当寄存器号 → 常量池混入 native 名/字面量后 find_local 错位（var l=7 存 strings[1] 返回槽 0）→ 改用独立 `local_names[]` 数组（strdup + 退出释放）
+- [x] 运行时：kyVM globals[KY_MAX_VARS]（按 proto 索引的错误建模）替换为 gvar_names/gvar_vals/gvar_count 名字表；GETGLOBAL 查找顺序 gvars → 函数 → native
+- [x] 编译器：VAR_DECL 顶层分支 emit SETGLOBAL（cs.is_top 标记）；赋值语句 local 未命中时走全局路径，支持 = += -= *= /=
+- [x] test_script.c 新增 test_global_vars 回归（顶层 var + 函数内读写 + 复合赋值 + 本地混合 = 22.0）
+- [x] 7/7 全绿，打包 exe 端到端复验通过（player/30/37）
+- [x] 已知遗留：ADD/SUB/MUL 运行时统一 double 输出（KYT_FLOAT），print 显示无碍但类型不保留 int；后续按需处理
+
+## GL 后端真实现 (2026-09-05)
+- [x] 环境探测：本机无 X/显示服务器，apt 装 mesa 22.3（libegl1-mesa-dev + libgles2-mesa-dev + swrast），EGL_PLATFORM_SURFACELESS_MESA 无头 pbuffer + GLES3 上下文验证可行（llvmpipe 软件渲染）
+- [x] gl_backend.c 重写：KY_HAS_EGL 编译开关（CMake find_path/find_library 检测 EGL+GLESv2，PUBLIC 传播给测试）；真实现 = EGL surfaceless 创建（platform_win 非 NULL 时当 EGLNativeDisplayType）+ shader 编译/链接（失败走 ky_log_write ERROR 输出 info log）+ VBO/纹理 GL 对象 + 单共享 VAO + set_pipeline 应用 depth/cull/blend 状态 + set_vertex_buffer 按 layout 应用 attrib + glUniform 按 bytes 分派（64=mat4，其余 4fv）+ drawElements/ArraysInstanced + present 用 glFinish（surfaceless 无交换链）
+- [x] 同一 buffer 可同绑 ARRAY/ELEMENT 两个 target 点（GL 语义），set_index_buffer 无需重传数据
+- [x] test_render.c 新增真渲染验证：全屏大三角形（GLES3 shader）draw_array 后 glReadPixels 中心像素 = 绿色，覆盖 EGL 上下文/shader/管线/VBO/draw 全链路
+- [x] 7/7 全绿（render 5.16s，llvmpipe 初始化开销属正常）；渲染断言 19 条全 PASS
+- [x] 后端选型结论：无头环境 GLES3/EGL 已是最优（Vulkan 软件层 lavapipe 收益为负）；枚举已预留 KY_RENDERER_VULKAN，真 GPU 环境再实现
+- [x] 遗留：cl 无 cancel 机制（begin 后不 submit 泄漏）；console 后端 draw_indexed 打印 "verts" 术语误导；cl 首字段=rd 的隐式契约无注释
