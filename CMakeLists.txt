@@ -26,6 +26,8 @@ add_library(ky_core STATIC
   src/core/time.c
   src/core/event.c
   src/core/input.c
+  src/core/arena.c
+  src/core/pool.c
 )
 target_include_directories(ky_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 if(UNIX)
@@ -120,6 +122,25 @@ if(KYR_BUILD_EDITOR)
      add_test(NAME editor COMMAND ky_test_editor)
    endif()
 endif()
+
+# Engine library (GLFW windowing + game loop)
+add_library(ky_runtime STATIC src/engine/glfw.c src/engine/engine.c)
+target_include_directories(ky_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(ky_runtime PUBLIC ky_core)
+find_library(GLFW3_LIBRARY glfw PATHS /usr/lib/x86_64-linux-gnu)
+find_path(GLFW3_INCLUDE_DIR GLFW/glfw3.h PATHS /usr/include)
+target_link_libraries(ky_runtime PUBLIC ${GLFW3_LIBRARY} ${CMAKE_DL_LIBS})
+target_include_directories(ky_runtime PUBLIC ${GLFW3_INCLUDE_DIR})
+if(UNIX)
+  target_link_libraries(ky_runtime PUBLIC X11 Xi Xrandr)
+endif()
+
+# First runnable engine demo: rotating WASD-controlled square
+add_executable(ky_demo src/demo/main.c)
+target_link_libraries(ky_demo PRIVATE ky_runtime ky_core)
+find_package(GLEW REQUIRED)
+target_include_directories(ky_demo PRIVATE ${GLEW_INCLUDE_DIR})
+target_link_libraries(ky_demo PRIVATE ${GLEW_SHARED_LIBRARY_RELEASE} OpenGL)
 
 # Simple render demo
 add_executable(ky_test_render_demo tests/test_render_demo.c)
