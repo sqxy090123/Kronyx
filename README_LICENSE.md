@@ -22,8 +22,8 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 ## 第三方依赖
 
 ### 标准库
-- **C Standard Library (libc)** - 无特定许可证，系统自带
-- **libm (数学库)** - BSD/GPL 许可，系统自带
+- **C Standard Library (libc)** - 系统自带，无许可证限制
+- **libm (数学库)** - 系统自带数学库，链接不产生任何许可证义务
 - **Windows SDK** (time.c) - Microsoft 许可，仅 Windows 平台
 
 ### 算法
