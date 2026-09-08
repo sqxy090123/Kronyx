@@ -170,4 +170,15 @@ Entries discovered by the Agent during task execution should follow this format:
   - Demo hero 纹理：assets/hero_8x8.bin（8×8 RGBA8，256 B）；缺失时角色回落白色 sprite，不报错
   - 测试新增：ky_test_resource_flow（28 断言），CMake add_test resource_flow；工具 ky_mk_demo_asset + `ctest -R demo_asset` 生成资产
   - 文档：.monkeycode/docs/resource.md（活契约）
-  - 构建命令不变：cmake -B build && cmake --build build -j4；ctest --test-dir build -j1
+   - 构建命令不变：cmake -B build && cmake --build build -j4；ctest --test-dir build -j1
+
+[Project Knowledge Summary]
+- Date: 2026-09-08
+- Context: Discovered by Agent while completing G6 scene serialization and G7 sprite animation slices
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - ky_hashmap_deinit 内部已释放所有 owned key/value；持有方不得手动再 free（否则 double free）；ky_scene_destroy 依赖 ky_hashmap_deinit 做 entries 清理
+  - ky_view_begin/ky_view_next 迭代模式：必须 `int more = ky_view_begin(...); while(more) { more = ky_view_next(&it); }`；错误写法 `while(ky_view_begin() || ky_view_next())` 每次迭代重置迭代器导致无限循环
+  - ky_world_add_component 迁移 entity 到新模式 archetype 后，之前持有的 component 指针可能失效（archetype 数据搬移）；step 后必须用 ky_world_get_component 重新获取
+  - ky_world_component_type_by_name 在组件注册前返回 UINT32_MAX；必须先 register 再 lookup
+  - ECS system 的 kySystem.order 是 uint32_t；传 -1 会溢出为 4294967295，排在最后
