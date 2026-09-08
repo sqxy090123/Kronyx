@@ -138,11 +138,18 @@ static int32_t move_entity(kyWorld *w, uint32_t id, const uint32_t *new_types, u
         const kyComponentType *ct = comp_type(w, types[i]);
         void *dst = (char *)na->columns[i] + new_row * ct->size;
         memset(dst, 0, ct->size);
+        int kept = 0;
         if (oa) {
             int col = arch_has_type(oa, types[i]);
-            if (col >= 0) memcpy(dst, (char *)oa->columns[col] + old_row * ct->size, ct->size);
+            if (col >= 0) {
+                memcpy(dst, (char *)oa->columns[col] + old_row * ct->size, ct->size);
+                kept = 1;
+            }
         }
-        if (ct->ctor) ct->ctor(dst);
+        /* Only construct components that are genuinely new; ones carried over
+         * from the old archetype already have live data (memcpy'd above) and
+         * must not have their ctor recalled. */
+        if (!kept && ct->ctor) ct->ctor(dst);
     }
     na->entity_ids[new_row] = id;
 
@@ -208,7 +215,16 @@ uint32_t ky_world_register_component(kyWorld *w, const kyComponentType *t) {
 
 const kyComponentType *ky_world_component_type(const kyWorld *w, uint32_t type_id) {
     if (type_id >= w->component_types.len) return NULL;
-    return comp_type(w, type_id);
+    return (const kyComponentType *)ky_array_get(&w->component_types, type_id);
+}
+
+uint32_t ky_world_component_type_by_name(const kyWorld *w, const char *name) {
+    if (!w || !name) return (uint32_t)-1;
+    for (uint32_t i = 0; i < w->component_types.len; ++i) {
+        const kyComponentType *ct = ky_world_component_type(w, i);
+        if (ct && ct->name && strcmp(ct->name, name) == 0) return i;
+    }
+    return (uint32_t)-1;
 }
 
 void ky_world_register_system(kyWorld *w, const kySystem *sys) {
@@ -263,6 +279,30 @@ void ky_world_despawn(kyWorld *w, kyEntity e) {
 int ky_entity_valid(const kyWorld *w, kyEntity e) {
     if (e.id >= w->slots.len) return 0;
     return slot_at(w, e.id)->version == e.version;
+}
+
+int ky_world_alive_count(const kyWorld *w) {
+    if (!w) return 0;
+    int count = 0;
+    for (size_t i = 0; i < w->slots.len; ++i) {
+        const kyEntitySlot *s = slot_at(w, (uint32_t)i);
+        if (s->archetype_index != KY_ARCH_NONE) count++;
+    }
+    return count;
+}
+
+kyEntity ky_world_get_alive_entity(const kyWorld *w, int idx) {
+    kyEntity zero = {0, 0};
+    if (!w || idx < 0) return zero;
+    int seen = 0;
+    for (size_t i = 0; i < w->slots.len; ++i) {
+        const kyEntitySlot *s = slot_at(w, (uint32_t)i);
+        if (s->archetype_index != KY_ARCH_NONE) {
+            if (seen == idx) return (kyEntity){(uint32_t)i, s->version};
+            seen++;
+        }
+    }
+    return zero;
 }
 
 void *ky_world_add_component(kyWorld *w, kyEntity e, uint32_t type_id) {

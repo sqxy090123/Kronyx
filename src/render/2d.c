@@ -468,6 +468,11 @@ static const kyComponentType *world_find_type(const kyWorld *w, const char *name
     return NULL;
 }
 
+kyTexture *ky2d_make_texture(kyRenderDevice *rd, int w, int h, int channels, const void *pixels) {
+    if (!rd || w <= 0 || h <= 0 || channels < 1 || channels > 4 || !pixels) return NULL;
+    return ky_rd_create_texture_2d(rd, w, h, channels, pixels);
+}
+
 int ky2d_render_world(kyRenderDevice *rd, kyWorld *w, kyEntity cam) {
     if (!rd || !w) return -1;
     if (!ky_entity_valid(w, cam)) return -1;

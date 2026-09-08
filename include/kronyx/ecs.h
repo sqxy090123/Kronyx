@@ -59,6 +59,8 @@ KY_API void ky_world_destroy(kyWorld *w);
 
 KY_API uint32_t ky_world_register_component(kyWorld *w, const kyComponentType *t);
 KY_API const kyComponentType *ky_world_component_type(const kyWorld *w, uint32_t type_id);
+/* Find type_id by component name.  Returns UINT32_MAX when not found. */
+KY_API uint32_t ky_world_component_type_by_name(const kyWorld *w, const char *name);
 
 KY_API void ky_world_register_system(kyWorld *w, const kySystem *sys);
 KY_API void ky_world_sort_systems(kyWorld *w);
@@ -66,6 +68,11 @@ KY_API void ky_world_sort_systems(kyWorld *w);
 KY_API kyEntity ky_world_spawn(kyWorld *w);
 KY_API void ky_world_despawn(kyWorld *w, kyEntity e);
 KY_API int ky_entity_valid(const kyWorld *w, kyEntity e);
+/* Return the number of alive (non-despawned) entities in the world. */
+KY_API int ky_world_alive_count(const kyWorld *w);
+/* Return the entity at alive-index `idx` (0-based), ordered by id.
+ * Returns {0,0} if idx is out of range. */
+KY_API kyEntity ky_world_get_alive_entity(const kyWorld *w, int idx);
 
 KY_API void *ky_world_add_component(kyWorld *w, kyEntity e, uint32_t type_id);
 KY_API void *ky_world_get_component(const kyWorld *w, kyEntity e, uint32_t type_id);

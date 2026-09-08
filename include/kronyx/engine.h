@@ -24,4 +24,8 @@ KY_API float ky_engine_height(void);
 /* Poll whether a GLFW key is currently held down. */
 KY_API int  ky_engine_key_pressed(int key);
 
+/* ---- Anti-tamper API ----------------------------------------------------- */
+
+#include "anti_tamper.h"
+
 #endif

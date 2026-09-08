@@ -31,39 +31,48 @@ kyAllocator ky_default_allocator(void) {
     return a;
 }
 
+#define KY_TRACK_HDR 16u
+
 static void *track_alloc(void *ud, size_t size) {
     kyTrackingState *st = (kyTrackingState *)ud;
-    void *p = malloc(size ? size : 1);
-    if (p) {
-        st->alloc_count++;
-        st->live_bytes += size;
-        if (st->live_bytes > st->peak_bytes) st->peak_bytes = st->live_bytes;
-    }
-    return p;
+    size_t payload = size ? size : 1;
+    uint8_t *raw = (uint8_t *)malloc(KY_TRACK_HDR + payload);
+    if (!raw) return NULL;
+    *(size_t *)raw = payload;
+    st->alloc_count++;
+    st->live_bytes += payload;
+    if (st->live_bytes > st->peak_bytes) st->peak_bytes = st->live_bytes;
+    return raw + KY_TRACK_HDR;
 }
 
 static void track_free(void *ud, void *ptr) {
     kyTrackingState *st = (kyTrackingState *)ud;
-    if (ptr) {
-        st->free_count++;
-    }
-    free(ptr);
+    if (!ptr) return;
+    uint8_t *raw = (uint8_t *)ptr - KY_TRACK_HDR;
+    size_t old = *(size_t *)raw;
+    if (st->live_bytes >= old) st->live_bytes -= old;
+    else st->live_bytes = 0;
+    st->free_count++;
+    free(raw);
 }
 
 static void *track_realloc(void *ud, void *ptr, size_t size) {
-    kyTrackingState *st = (kyTrackingState *)ud;
     if (!ptr) return track_alloc(ud, size);
     if (size == 0) {
         track_free(ud, ptr);
-        return malloc(1);
+        return track_alloc(ud, 1);
     }
-    size_t old = 0;
-    void *p = realloc(ptr, size);
-    if (p) {
-        st->live_bytes = st->live_bytes - old + size;
-        if (st->live_bytes > st->peak_bytes) st->peak_bytes = st->live_bytes;
-    }
-    return p;
+    kyTrackingState *st = (kyTrackingState *)ud;
+    uint8_t *raw = (uint8_t *)ptr - KY_TRACK_HDR;
+    size_t old = *(size_t *)raw;
+    uint8_t *nr = (uint8_t *)realloc(raw, KY_TRACK_HDR + size);
+    if (!nr) return NULL;
+    *(size_t *)nr = size;
+    if (st->live_bytes >= old) st->live_bytes -= old;
+    else st->live_bytes = 0;
+    st->live_bytes += size;
+    if (st->live_bytes > st->peak_bytes) st->peak_bytes = st->live_bytes;
+    return nr + KY_TRACK_HDR;
 }
 
 kyAllocator ky_tracking_allocator(kyMemStats *stats_out) {

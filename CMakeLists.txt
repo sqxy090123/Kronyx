@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(Kronyx VERSION 0.1.0 LANGUAGES C)
+project(Kronyx VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -28,6 +28,7 @@ add_library(ky_core STATIC
   src/core/input.c
   src/core/arena.c
   src/core/pool.c
+  src/core/file.c
 )
 target_include_directories(ky_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 if(UNIX)
@@ -47,6 +48,7 @@ add_library(ky_engine STATIC
   src/script/script.c
   src/script/parser.c
   src/script/vm.c
+  src/script/bindings.c
   src/pack/pack.c
 )
 target_link_libraries(ky_engine PUBLIC ky_core)
@@ -107,10 +109,43 @@ if(KYR_BUILD_TESTS)
   target_link_libraries(ky_test_event PRIVATE ky_core)
   add_test(NAME event COMMAND ky_test_event)
 
+  add_executable(ky_test_anti_tamper tests/test_anti_tamper.c)
+  target_link_libraries(ky_test_anti_tamper PRIVATE ky_antitamper ${CMAKE_DL_LIBS})
+  add_test(NAME anti_tamper COMMAND ky_test_anti_tamper)
   add_executable(ky_test_input tests/test_input.c)
   target_link_libraries(ky_test_input PRIVATE ky_core)
   add_test(NAME input COMMAND ky_test_input)
+
+  add_executable(ky_test_demo_loop tests/test_demo_loop.c)
+  target_include_directories(ky_test_demo_loop PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/demo)
+  target_link_libraries(ky_test_demo_loop PRIVATE ky_platformer ky_engine ky_core)
+  add_test(NAME demo_loop COMMAND ky_test_demo_loop)
+
+  add_executable(ky_test_resource_flow tests/test_resource_flow.c)
+  target_link_libraries(ky_test_resource_flow PRIVATE ky_engine ky_core)
+  add_test(NAME resource_flow COMMAND ky_test_resource_flow)
+
+  add_executable(ky_test_kyx_bindings tests/test_kyx_bindings.c)
+  target_link_libraries(ky_test_kyx_bindings PRIVATE ky_engine ky_core)
+  add_test(NAME kyx_bindings COMMAND ky_test_kyx_bindings)
+
+  # Editor core (headless, no ImGui/GLFW dependency)
+  add_library(editor_core STATIC tools/editor/src/editor_core.c)
+  target_include_directories(editor_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(editor_core PUBLIC ky_engine ky_core)
+  add_executable(ky_test_editor_world tests/test_editor_world.c)
+  target_link_libraries(ky_test_editor_world PRIVATE editor_core ky_engine ky_core)
+  add_test(NAME editor_world COMMAND ky_test_editor_world)
 endif()
+
+# 资产管理工具：生成 demo 用的 8x8 RGBA 方块资产（无 PNG 依赖）
+add_executable(ky_mk_demo_asset tools/mk_demo_asset.c)
+add_custom_target(demo_asset
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/assets
+  COMMAND $<TARGET_FILE:ky_mk_demo_asset> ${CMAKE_CURRENT_SOURCE_DIR}/assets/hero_8x8.bin
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Generating assets/hero_8x8.bin"
+)
 
 # 编辑器模块（可选）
 option(KYR_BUILD_EDITOR "Build ImGui editor" OFF)
@@ -135,12 +170,71 @@ if(UNIX)
   target_link_libraries(ky_runtime PUBLIC X11 Xi Xrandr)
 endif()
 
-# First runnable engine demo: rotating WASD-controlled square
+# Anti-tamper library (game exe integration)
+add_library(ky_antitamper STATIC src/engine/anti_tamper_game.c)
+target_include_directories(ky_antitamper PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(ky_antitamper PUBLIC ky_core)
+if(WIN32)
+  target_link_libraries(ky_antitamper PRIVATE crypt32)
+elseif(APPLE)
+  target_link_libraries(ky_antitamper PRIVATE "-framework Security" "-framework CoreFoundation")
+  set_target_properties(ky_antitamper PROPERTIES POSITION_INDEPENDENT_CODE ON)
+else()
+  target_link_libraries(ky_antitamper PRIVATE ${CMAKE_DL_LIBS})
+  target_compile_definitions(ky_antitamper PRIVATE HAVE_OPENSSL)
+  target_link_libraries(ky_antitamper PRIVATE OpenSSL::Crypto)
+  # Set rpath to find companion .so in same directory
+  set_target_properties(ky_antitamper PROPERTIES
+    BUILD_RPATH "\$ORIGIN"
+    INSTALL_RPATH "\$ORIGIN"
+  )
+endif()
+
+# KyAntiTamper validation library (shared, cross-platform)
+add_library(KyAntiTamper SHARED src/engine/anti_tamper_dll.cpp)
+set_source_files_properties(src/engine/anti_tamper_dll.cpp PROPERTIES LANGUAGE CXX)
+target_compile_definitions(KyAntiTamper PRIVATE KY_ANTITEMPER_BUILDING_LIB)
+target_include_directories(KyAntiTamper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+if(WIN32)
+  target_link_libraries(KyAntiTamper PRIVATE crypt32)
+  set_target_properties(KyAntiTamper PROPERTIES
+    OUTPUT_NAME "KyAntiTamper"
+    SUFFIX ".dll"
+  )
+elseif(APPLE)
+  target_link_libraries(KyAntiTamper PRIVATE "-framework Security" "-framework CoreFoundation" CommonCrypto)
+  set_target_properties(KyAntiTamper PROPERTIES
+    OUTPUT_NAME "KyAntiTamper"
+    SUFFIX ".dylib"
+    POSITION_INDEPENDENT_CODE ON
+  )
+else()
+  find_package(OpenSSL REQUIRED)
+  target_compile_definitions(KyAntiTamper PRIVATE HAVE_OPENSSL)
+  target_link_libraries(KyAntiTamper PUBLIC OpenSSL::Crypto)
+  set_target_properties(KyAntiTamper PROPERTIES
+    OUTPUT_NAME "KyAntiTamper"
+    SUFFIX ".so"
+    POSITION_INDEPENDENT_CODE ON
+    BUILD_RPATH "\$ORIGIN"
+    INSTALL_RPATH "\$ORIGIN"
+  )
+endif()
+
+# G1: 2D platformer vertical slice (shared demo world built on ECS + 2D + physics)
+add_library(ky_platformer STATIC src/demo/platformer_world.c)
+target_include_directories(ky_platformer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/demo)
+target_link_libraries(ky_platformer PUBLIC ky_engine ky_core)
+
+# First runnable engine demo: 2D platformer (headed loop or headless smoke)
 add_executable(ky_demo src/demo/main.c)
-target_link_libraries(ky_demo PRIVATE ky_runtime ky_core)
-find_package(GLEW REQUIRED)
-target_include_directories(ky_demo PRIVATE ${GLEW_INCLUDE_DIR})
-target_link_libraries(ky_demo PRIVATE ${GLEW_SHARED_LIBRARY_RELEASE} OpenGL)
+target_include_directories(ky_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/demo)
+target_link_libraries(ky_demo PRIVATE ky_platformer ky_runtime ky_antitamper ky_engine ky_core)
+# Set rpath so demo can find libKyAntiTamper.so in same directory
+set_target_properties(ky_demo PROPERTIES
+  BUILD_RPATH "\$ORIGIN"
+  INSTALL_RPATH "\$ORIGIN"
+)
 
 # Simple render demo
 add_executable(ky_test_render_demo tests/test_render_demo.c)

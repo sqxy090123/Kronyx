@@ -151,6 +151,23 @@ static void test_counter_ctor_dtor(void) {
     ky_world_destroy(w);
 }
 
+static void test_ctor_not_recalled_on_migrate(void) {
+    kyAllocator al = ky_default_allocator();
+    kyWorld *w = ky_world_create(&al);
+    register_types(w);
+
+    kyEntity e = ky_world_spawn(w);
+    Counter *c = (Counter *)ky_world_add_component(w, e, tid_counter);
+    KY_CHECK(c->ctor_count == 1);
+
+    ky_world_add_component(w, e, tid_transform);
+    c = (Counter *)ky_world_get_component(w, e, tid_counter);
+    KY_CHECK(c != NULL);
+    KY_CHECK(c->ctor_count == 1);
+
+    ky_world_destroy(w);
+}
+
 static void test_many_entities(void) {
     kyAllocator al = ky_default_allocator();
     kyWorld *w = ky_world_create(&al);
@@ -318,6 +335,7 @@ void ky_test_run_all(void) {
     test_add_get_remove();
     test_component_persistence();
     test_counter_ctor_dtor();
+    test_ctor_not_recalled_on_migrate();
     test_many_entities();
     test_system_scheduling();
     test_view_iteration();

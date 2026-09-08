@@ -21,6 +21,7 @@ kyRenderDevice *ky_rd_create(kyRendererBackend backend, void *platform_win) {
 
     kyRenderDevice *rd = (kyRenderDevice *)malloc(sizeof(kyRenderDevice));
     if (!rd) { vt->destroy(impl); return NULL; }
+    memset(rd, 0, sizeof(*rd));
 
     rd->backend = backend;
     rd->impl = impl;

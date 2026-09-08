@@ -1,213 +1,149 @@
-/* Demo: rotating, WASD-controlled square rendered with raw OpenGL 3.3. */
+/* Demo: 2D platformer vertical slice.
+ *
+ * Replaces the old raw-GL rotating square. Uses the ECS world +
+ * Transform/Sprite/Camera2D + sprite-batch pipeline + AABB physics.
+ *
+ * Two entry paths:
+ *   - headed : GLFW available -> ky_engine_run(update, render) game loop
+ *   - headless: no display    -> N-frame smoke through the same platformer_tick
+ *
+ * Anti-tamper verification runs first and is the gate to both paths.
+ */
 
-#include <GL/glew.h>
 #include "kronyx/engine.h"
-#include "kronyx/math.h"
-#include <GLFW/glfw3.h>
+#include "kronyx/input.h"
+#include "kronyx/render.h"
+#include "platformer_world.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-/* ------------------------------------------------------------------ */
-/* Shader source                                                       */
-/* ------------------------------------------------------------------ */
+/* GLFW key codes (subset) — values from GLFW 3.x */
+#define KY_GLFW_KEY_A      65
+#define KY_GLFW_KEY_D      68
+#define KY_GLFW_KEY_W      87
+#define KY_GLFW_KEY_SPACE  32
+#define KY_GLFW_KEY_LEFT   263
+#define KY_GLFW_KEY_RIGHT  265
+#define KY_GLFW_KEY_UP     266
+#define KY_GLFW_KEY_ESCAPE 256
 
-static const char *vert_src =
-    "#version 330 core\n"
-    "layout(location=0) in vec2 a_pos;\n"
-    "uniform mat4 u_mvp;\n"
-    "void main(){ gl_Position = u_mvp * vec4(a_pos, 0.0, 1.0); }\n";
-
-static const char *frag_src =
-    "#version 330 core\n"
-    "out vec4 out_color;\n"
-    "void main(){ out_color = vec4(1.0); }\n";
+static void *g_demo_pw = NULL;
 
 /* ------------------------------------------------------------------ */
-/* Simple matrix helpers (col-major 4x4)                               */
+/* Headed path                                                         */
 /* ------------------------------------------------------------------ */
 
-static void mat4_identity(float m[16]) {
-    memset(m, 0, 64);
-    m[0] = m[5] = m[10] = m[15] = 1.0f;
-}
+static float demo_update(float dt) {
+    PlatformerWorld *pw = (PlatformerWorld *)g_demo_pw;
+    if (!pw) return dt;
 
-static void mat4_mul(const float a[16], const float b[16], float out[16]) {
-    float t[16];
-    for (int i = 0; i < 4; i++)
-        for (int j = 0; j < 4; j++) {
-            t[j*4+i] = 0.0f;
-            for (int k = 0; k < 4; k++)
-                t[j*4+i] += a[k*4+i] * b[j*4+k];
-        }
-    memcpy(out, t, 64);
-}
+    float vx = 0.0f;
+    int jump = 0;
 
-static void mat4_ortho(float left, float right, float bottom, float top,
-                       float zn, float zf, float m[16]) {
-    mat4_identity(m);
-    m[0]  = 2.0f / (right - left);
-    m[5]  = 2.0f / (top - bottom);
-    m[10] = -2.0f / (zf - zn);
-    m[12] = -(right + left) / (right - left);
-    m[13] = -(top + bottom) / (top - bottom);
-    m[14] = -(zf + zn) / (zf - zn);
-}
+    if (ky_engine_key_pressed(KY_GLFW_KEY_A) || ky_engine_key_pressed(KY_GLFW_KEY_LEFT))
+        vx -= PLATFORMER_MAX_SPEED;
+    if (ky_engine_key_pressed(KY_GLFW_KEY_D) || ky_engine_key_pressed(KY_GLFW_KEY_RIGHT))
+        vx += PLATFORMER_MAX_SPEED;
+    if (ky_engine_key_pressed(KY_GLFW_KEY_SPACE) ||
+        ky_engine_key_pressed(KY_GLFW_KEY_W) ||
+        ky_engine_key_pressed(KY_GLFW_KEY_UP))
+        jump = 1;
 
-static void mat4_rotateZ(float angle, float m[16]) {
-    mat4_identity(m);
-    float c = cosf(angle), s = sinf(angle);
-    m[0] = c;  m[1] = s;
-    m[4] = -s; m[5] = c;
-}
-
-static void mat4_translate(float x, float y, float m[16]) {
-    mat4_identity(m);
-    m[12] = x;
-    m[13] = y;
-}
-
-/* ------------------------------------------------------------------ */
-/* Demo state                                                          */
-/* ------------------------------------------------------------------ */
-
-typedef struct {
-    float x, y;
-    float angle;
-} State;
-
-static State  g_state = {0};
-static GLuint g_prog = 0, g_vao = 0, g_vbo = 0, g_ibo = 0;
-static GLint  g_loc_mvp = -1;
-
-/* Square vertices (centered at origin, size 1.0) + indices */
-static const float g_verts[] = {
-    -0.5f, -0.5f,
-     0.5f, -0.5f,
-     0.5f,  0.5f,
-    -0.5f,  0.5f,
-};
-static const unsigned char g_indices[] = { 0,1,2, 0,2,3 };
-
-static int compile_shader(GLenum type, const char *src) {
-    GLuint s = glCreateShader(type);
-    glShaderSource(s, 1, &src, NULL);
-    glCompileShader(s);
-    int ok;
-    glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        char log[512];
-        glGetShaderInfoLog(s, 512, NULL, log);
-        fprintf(stderr, "Shader compile error:\n%s\n", log);
-        glDeleteShader(s);
-        return 0;
-    }
-    return s;
-}
-
-static int setup_gl(void) {
-    GLenum err = glewInit();
-    if (err != GLEW_OK) {
-        fprintf(stderr, "GLEW init failed: %s\n", glewGetErrorString(err));
-        return 0;
-    }
-
-    GLuint vs = compile_shader(GL_VERTEX_SHADER, vert_src);
-    GLuint fs = compile_shader(GL_FRAGMENT_SHADER, frag_src);
-    if (!vs || !fs) { glDeleteShader(vs); glDeleteShader(fs); return 0; }
-
-    g_prog = glCreateProgram();
-    glAttachShader(g_prog, vs);
-    glAttachShader(g_prog, fs);
-    glLinkProgram(g_prog);
-    int ok;
-    glGetProgramiv(g_prog, GL_LINK_STATUS, &ok);
-    if (!ok) {
-        char log[512];
-        glGetProgramInfoLog(g_prog, 512, NULL, log);
-        fprintf(stderr, "Link error:\n%s\n", log);
-    }
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-
-    g_loc_mvp = glGetUniformLocation(g_prog, "u_mvp");
-
-    glGenVertexArrays(1, &g_vao);
-    glBindVertexArray(g_vao);
-
-    glGenBuffers(1, &g_vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(g_verts), g_verts, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, NULL);
-
-    glGenBuffers(1, &g_ibo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_ibo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(g_indices), g_indices, GL_STATIC_DRAW);
-
-    glBindVertexArray(0);
-    glUseProgram(0);
-    return 1;
-}
-
-static void cleanup_gl(void) {
-    if (g_ibo) glDeleteBuffers(1, &g_ibo);
-    if (g_vbo) glDeleteBuffers(1, &g_vbo);
-    if (g_vao) glDeleteVertexArrays(1, &g_vao);
-    if (g_prog) glDeleteProgram(g_prog);
-    g_prog = 0; g_vao = 0; g_vbo = 0; g_ibo = 0;
-}
-
-static float update(float dt) {
-    float speed = 3.0f;
-    if (ky_engine_key_pressed(GLFW_KEY_W) || ky_engine_key_pressed(GLFW_KEY_UP))
-        g_state.y += speed * dt;
-    if (ky_engine_key_pressed(GLFW_KEY_S) || ky_engine_key_pressed(GLFW_KEY_DOWN))
-        g_state.y -= speed * dt;
-    if (ky_engine_key_pressed(GLFW_KEY_A) || ky_engine_key_pressed(GLFW_KEY_LEFT))
-        g_state.x -= speed * dt;
-    if (ky_engine_key_pressed(GLFW_KEY_D) || ky_engine_key_pressed(GLFW_KEY_RIGHT))
-        g_state.x += speed * dt;
-    g_state.angle += dt * 1.5f;
+    (void)platformer_tick(pw, dt, vx, jump);
     return dt;
 }
 
-static void render(void) {
-    float w = ky_engine_width(), h = ky_engine_height();
-    float aspect = w / h;
-    float half = 4.0f;
-    float lr = half * aspect, bt = half;
-
-    float proj[16], model[16], view[16], mvp[16];
-    mat4_ortho(-lr, lr, -bt, bt, -1.0f, 1.0f, proj);
-    mat4_rotateZ(g_state.angle, model);
-    mat4_translate(g_state.x, g_state.y, view);
-    mat4_mul(proj, view, mvp);
-    mat4_mul(mvp, model, mvp);
-
-    glViewport(0, 0, (GLuint)w, (GLuint)h);
-    glClearColor(0.08f, 0.08f, 0.12f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    glUseProgram(g_prog);
-    glUniformMatrix4fv(g_loc_mvp, 1, GL_FALSE, mvp);
-    glBindVertexArray(g_vao);
-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_BYTE, NULL);
-    glBindVertexArray(0);
-    glUseProgram(0);
+static void demo_render(void) {
+    /* Rendering is already done inside platformer_tick; nothing to add. */
 }
 
-int main(void) {
-    if (ky_engine_init(800, 600, "Kronyx — rotating square demo") != 0)
-        return 1;
-    if (!setup_gl()) {
-        fprintf(stderr, "Failed to initialise OpenGL\n");
-        ky_engine_shutdown();
+/* ------------------------------------------------------------------ */
+/* Headless path                                                       */
+/* ------------------------------------------------------------------ */
+
+static int run_headless_smoke(PlatformerWorld *pw) {
+    const float dt = 1.0f / 60.0f;
+    float rest = PLATFORMER_GROUND_TOP + PLATFORMER_ROLE_RADIUS;
+
+    /* Fall to ground (no input). */
+    for (int i = 0; i < 60; i++) platformer_tick(pw, dt, 0.0f, 0);
+    kyVec2 p0 = platformer_role_pos(pw);
+    if (fabsf(p0.y - rest) > 0.2f) {
+        fprintf(stderr, "headless: role not at rest (y=%.3f, rest=%.3f)\n", p0.y, rest);
         return 1;
     }
-    printf("Running. WASD to move, ESC to quit.\n");
-    ky_engine_run(update, render);
-    cleanup_gl();
-    ky_engine_shutdown();
-    printf("Demo exited cleanly.\n");
+
+    /* Move left, then right. */
+    float start_x = p0.x;
+    for (int i = 0; i < 30; i++) platformer_tick(pw, dt, -PLATFORMER_MAX_SPEED, 0);
+    float left_x = platformer_role_pos(pw).x;
+    for (int i = 0; i < 30; i++) platformer_tick(pw, dt,  PLATFORMER_MAX_SPEED, 0);
+    float right_x = platformer_role_pos(pw).x;
+    if (!(left_x < start_x && right_x > left_x)) {
+        fprintf(stderr, "headless: horizontal movement wrong (start=%.2f left=%.2f right=%.2f)\n",
+                start_x, left_x, right_x);
+        return 1;
+    }
+
+    /* Jump: role must rise above rest. */
+    int rose = 0;
+    for (int i = 0; i < 60; i++) {
+        platformer_tick(pw, dt, 0.0f, (i == 0) ? 1 : 0);
+        if (platformer_role_pos(pw).y > rest + 0.25f) { rose = 1; break; }
+    }
+    if (!rose) {
+        fprintf(stderr, "headless: jump did not lift role\n");
+        return 1;
+    }
+
+    kyVec2 p_end = platformer_role_pos(pw);
+    printf("Headless smoke OK (role.x=%.2f, role.y=%.2f)\n", p_end.x, p_end.y);
     return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* main                                                                */
+/* ------------------------------------------------------------------ */
+
+int main(void) {
+    KyTamperResult res = ky_tamper_init(KY_TAMPER_MODE_ERROR, 64u * 1024u * 1024u);
+    if (res != KY_TAMPER_OK) {
+        fprintf(stderr, "Tamper verification failed: %d\n", (int)res);
+        return 1;
+    }
+    printf("Anti-tamper verification passed.\n");
+
+    /* Prefer the GPU (pbuffer) backend; fall back to the console backend when
+     * EGL is unavailable. Render and tick logic are identical either way. */
+    PlatformerWorld pw;
+    memset(&pw, 0, sizeof(pw));
+    int setup_ok = (platformer_setup(&pw, KY_RENDERER_GL) == 0);
+    if (!setup_ok)
+        setup_ok = (platformer_setup(&pw, KY_RENDERER_CONSOLE) == 0);
+    if (!setup_ok) {
+        fprintf(stderr, "platformer_setup failed (gl and console both failed)\n");
+        ky_tamper_shutdown();
+        return 1;
+    }
+    printf("Render backend: %s\n", ky_rd_backend_name(pw.rd));
+    g_demo_pw = &pw;
+
+    int headed_ok = (ky_engine_init(800, 600, "Kronyx — 2D platformer") == 0);
+    int rc = 0;
+    if (headed_ok) {
+        /* Headed loop uses the same platformer_tick; demo_update reads GLFW keys. */
+        printf("Running. A/D or arrows to move, SPACE/W to jump.\n");
+        ky_engine_run(demo_update, demo_render);
+        ky_engine_shutdown();
+    } else {
+        printf("No display; running headless smoke.\n");
+        rc = run_headless_smoke(&pw);
+    }
+
+    platformer_teardown(&pw);
+    g_demo_pw = NULL;
+    ky_tamper_shutdown();
+    printf("Done.\n");
+    return rc;
 }

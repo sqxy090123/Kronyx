@@ -352,7 +352,10 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
             case OP_NATIVECALL: {
                 /* A=dest, B=nargs|(name_idx<<8), C=ns_string_idx */
                 const char *ns = proto_str(proto, C);
-                const char *nm = (B >= 256) ? proto_str(proto, B >> 8) : NULL;
+                /* name index is always present for NATIVECALL (emitted from the
+                 * field-call path); decode unconditionally.  The old "(B >= 256)"
+                 * guard dropped every native whose string index was 0. */
+                const char *nm = proto_str(proto, B >> 8);
                 int nargs = B & 0xFF;
                 kyValue *arg_base = &vm->stack[base + A + 1];
                 for (int i = 0; i < vm->proto_count && i < KYX_MAX_REGISTRY; i++) {

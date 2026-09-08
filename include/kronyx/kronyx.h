@@ -4,6 +4,8 @@
 #include "defines.h"
 #include "math.h"
 #include "memory.h"
+#include "arena.h"
+#include "pool.h"
 #include "array.h"
 #include "hashmap.h"
 #include "string.h"

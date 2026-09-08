@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define A(cond, msg) do { assertions++; if (!(cond)) { failures++; printf("FAIL: %s\n", msg); } else { printf("PASS: %s\n", msg); } } while(0)
+
 static int g_event_hit_count = 0;
 static const char *g_last_event_name = NULL;
 
@@ -18,7 +20,6 @@ static void event_listener(const char *name, const void *data, void *user) {
 static void test_event_basic(void) {
     printf("--- event basic ---\n");
     int assertions = 0, failures = 0;
-    #define A(cond, msg) do { assertions++; if (!(cond)) { failures++; printf("FAIL: %s\n", msg); } else { printf("PASS: %s\n", msg); } } while(0)
 
     g_event_hit_count = 0;
     g_last_event_name = NULL;
@@ -39,7 +40,6 @@ static void queue_sink(void *user, const kyInputEvent *ev, int count) {
 static void test_input_queue(void) {
     printf("--- input queue ---\n");
     int assertions = 0, failures = 0;
-    #define A(cond, msg) do { assertions++; if (!(cond)) { failures++; printf("FAIL: %s\n", msg); } else { printf("PASS: %s\n", msg); } } while(0)
 
     ky_input_reset();
     g_queue_received = 0;
@@ -77,9 +77,7 @@ static void mock_narrow(uint32_t a, uint32_t b, int *alive) {
 static void test_physics_hooks(void) {
     printf("--- physics hooks ---\n");
     int assertions = 0, failures = 0;
-    #define A(cond, msg) do { assertions++; if (!(cond)) { failures++; printf("FAIL: %s\n", msg); } else { printf("PASS: %s\n", msg); } } while(0)
 
-    kyAllocator al = ky_default_allocator();
     kyPhysicsWorld *pw = ky_physics_create(ky_vec3(0, -9.81f, 0));
     A(pw != NULL, "physics world created");
 
@@ -108,7 +106,6 @@ static void mock_draw_pass(kyRenderDevice *rd, void *cmdlist, void *user) {
 static void test_render_hook(void) {
     printf("--- render draw-pass hook ---\n");
     int assertions = 0, failures = 0;
-    #define A(cond, msg) do { assertions++; if (!(cond)) { failures++; printf("FAIL: %s\n", msg); } else { printf("PASS: %s\n", msg); } } while(0);
 
     kyRenderDevice *rd = ky_rd_create(KY_RENDERER_CONSOLE, NULL);
     A(rd != NULL, "console renderer created");
@@ -150,7 +147,6 @@ static kyMat4 custom_camera_matrix(const kyCamera2D *cam, const kyTransform *tr,
 static void test_2d_hooks(void) {
     printf("--- 2d hooks ---\n");
     int assertions = 0, failures = 0;
-    #define A(cond, msg) do { assertions++; if (!(cond)) { failures++; printf("FAIL: %s\n", msg); } else { printf("PASS: %s\n", msg); } } while(0);
 
     ky2dContext ctx = ky2d_context_default();
     ctx.sprite_gen = custom_sprite_gen;

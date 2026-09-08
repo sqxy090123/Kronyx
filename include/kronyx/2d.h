@@ -57,6 +57,12 @@ KY_API kyCamera2D ky_camera2d_new(void);
  * Returns the number of sprites drawn, or a negative code on error:
  *   -1 invalid arguments (rd/world/camera)
  * Returns 0 when the camera has a zero viewport or nothing to draw. */
+/* Convenience: build a 2D texture from raw pixel bytes.
+ * Validates w/h/channels and forwards to ky_rd_create_texture_2d.
+ * Returns NULL for invalid input; caller owns the returned texture and
+ * must release with ky_rd_destroy_texture. */
+KY_API kyTexture *ky2d_make_texture(kyRenderDevice *rd, int w, int h, int channels, const void *pixels);
+
 KY_API int ky2d_render_world(kyRenderDevice *rd, kyWorld *w, kyEntity cam);
 
 /* Same as above but picks the active camera with the smallest entity id.
