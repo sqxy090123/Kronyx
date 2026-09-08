@@ -85,7 +85,7 @@ G1 是整条产品线的主轴。G2 已在 G1 绿后落地最小集。
 
 | ID | 对象 | 前置 | 备注 |
 |----|------|------|------|
-| G7 | Sprite 帧动画 | G1 | 时间轴 + 图集 UV，不接骨骼 |
+| G7 | **Sprite 帧动画** ✅ | G1 | 时间轴 + 图集 UV，不接骨骼 |
 | G8 | 碰撞回调导出 | G1 | 物理 contact → `ky_event_*`，供 demo/脚本 |
 | G9 | 关节 / constraints | 3D 或复杂 2D 需要时 | 现物理无 joint API |
 | G10 | 粒子 | G7 之后 | |
@@ -163,6 +163,13 @@ ASan（`detect_leaks=0`）全量 `ctest` 16/16 绿。
 - `tests/test_scene_serialize.c`（50 断言）：roundtrip、save 可读性、malformed 场景错误处理
 - CMake：`ky_test_scene_serialize` 测试目标
 
-ASan（`detect_leaks=0`）全量 `ctest` 17/17 绿。（注：`ecs` 一度双 free 崩溃，根因是 `ky_scene_destroy` 手动 free hashmap entries 后又 `ky_hashmap_deinit` 再 free 一次，已移除手动 free，`2e73d44`。）
+ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 
-**下一刀：G7 Sprite 帧动画。**
+**已完成：G7 Sprite 帧动画。**
+交付：
+- `include/kronyx/anim2d.h` + `src/render/anim2d.c`：`kyAnimator` 组件（cols/frames/fps/looping/time/current_frame）、`ky_animator_new/frame_uv/apply_to_sprite` API、ECS system `sprite-animator`（遍历 sprite+animator view，按 fps 推进帧并写入 sprite UV）
+- 图集 UV 按行优先网格计算：`col = f % cols, row = f / cols`，单元格 UV = `[col/cols, row/nrows)` 到 `[(col+1)/cols, (row+1)/nrows)`，`nrows = ceil(frames/cols)`
+- `tests/test_spritesheet.c`（30 断言）：defaults、单帧 UV、1×N 竖条、2×3 网格、apply_to_sprite、system 推进帧、loop wrap、non-loop clamp、invalid params、无 system 时不前进
+- 关键 bug 修复：`while(ky_view_begin() || ky_view_next())` 每次迭代重置迭代器 → 改为 `int more = begin(); while(more) { more = next(); }`
+
+**下一刀：G8 碰撞回调导出。**
