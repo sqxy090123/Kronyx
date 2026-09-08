@@ -45,6 +45,7 @@ Entries discovered by the Agent during task execution should follow this format:
   - G5 editor_core 使用 spawned 列表追踪编辑器创建的实体，避免空洞版本导致的计数错误
   - G6 场景序列化 .ksn 格式：属性值用引号包裹时必须在解析时剥离首尾 " 再传给 atof/atoi，否则返回 0
   - G6 ky_scene_load 要求每个 entity 至少含一个 Transform 组件，否则返回 -4
+  - ky_hashmap_deinit 内部已释放所有 owned key/value；持有方不得手动再 free（否则 double free）；ky_scene_destroy 依赖 ky_hashmap_deinit 做 entries 清理
 
 [Project Knowledge Summary]
 - Date: 2026-09-04

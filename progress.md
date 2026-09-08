@@ -163,6 +163,6 @@ ASan（`detect_leaks=0`）全量 `ctest` 16/16 绿。
 - `tests/test_scene_serialize.c`（50 断言）：roundtrip、save 可读性、malformed 场景错误处理
 - CMake：`ky_test_scene_serialize` 测试目标
 
-ASan（`detect_leaks=0`）全量 `ctest` 16/17 绿（唯一失败 `ecs` 为预先存在的子进程崩溃，与本次改动无关）。
+ASan（`detect_leaks=0`）全量 `ctest` 17/17 绿。（注：`ecs` 一度双 free 崩溃，根因是 `ky_scene_destroy` 手动 free hashmap entries 后又 `ky_hashmap_deinit` 再 free 一次，已移除手动 free，`2e73d44`。）
 
 **下一刀：G7 Sprite 帧动画。**
