@@ -26,13 +26,6 @@ kyScene *ky_scene_create(kyAllocator *alloc, const char *name) {
 
 void ky_scene_destroy(kyScene *s) {
     if (!s) return;
-    for (size_t i = 0; i < s->meta.cap; ++i) {
-        kyHashEntry *e = &s->meta.entries[i];
-        if (e->state == KY_HASHMAP_STATE_USED && e->owned) {
-            ky_mem_free(&s->alloc, (void *)e->key);
-            ky_mem_free(&s->alloc, e->value);
-        }
-    }
     ky_world_destroy(s->world);
     ky_hashmap_deinit(&s->meta);
     ky_mem_free(&s->alloc, s->name);
