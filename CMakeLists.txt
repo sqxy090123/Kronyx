@@ -136,6 +136,11 @@ if(KYR_BUILD_TESTS)
   add_executable(ky_test_editor_world tests/test_editor_world.c)
   target_link_libraries(ky_test_editor_world PRIVATE editor_core ky_engine ky_core)
   add_test(NAME editor_world COMMAND ky_test_editor_world)
+
+  # Scene serialization
+  add_executable(ky_test_scene_serialize tests/test_scene_serialize.c)
+  target_link_libraries(ky_test_scene_serialize PRIVATE ky_engine ky_core)
+  add_test(NAME scene_serialize COMMAND ky_test_scene_serialize)
 endif()
 
 # 资产管理工具：生成 demo 用的 8x8 RGBA 方块资产（无 PNG 依赖）
