@@ -33,7 +33,7 @@ Entries discovered by the Agent during task execution should follow this format:
 
 [Project Knowledge Summary]
 - Date: 2026-09-08
-- Context: Agent 完成 G3 kyx 游戏绑定和 G5 编辑器核心，并修复 ASan SEGV 与 ecs 迁移 ctor 双重 bug
+- Context: Agent 完成 G3 kyx 游戏绑定、G5 编辑器核心和 G6 场景序列化，并修复 ASan SEGV 与 ecs 迁移 ctor 双重 bug
 - Category: Troubleshooting & Debugging
 - Instructions:
   - kyArray 持有 kyAllocator* 指针；make_world() 的栈上 allocator 在函数返回后悬空，ky_world_destroy→ky_array_deinit→ky_mem_free 触发 ASan SEGV；规则：allocator 必须比 world 活得久（static kyAllocator g_alloc 或平台世界结构体成员）
@@ -43,6 +43,8 @@ Entries discovered by the Agent during task execution should follow this format:
   - ky_view_begin 内部已调用一次 ky_view_next；不能在 begin 后再调 next 获取第一个结果，否则跳过一个实体
   - ECS despawn 会递增 slot version 但不清除 slot，导致 {id, old_ver+1} 通过 ky_entity_valid 但 archetype_index=KY_ARCH_NONE； hierarchy 遍历必须用 ky_world_alive_count + ky_world_get_alive_entity（检查 archetype_index != KY_ARCH_NONE）而非扫描 id/version 对
   - G5 editor_core 使用 spawned 列表追踪编辑器创建的实体，避免空洞版本导致的计数错误
+  - G6 场景序列化 .ksn 格式：属性值用引号包裹时必须在解析时剥离首尾 " 再传给 atof/atoi，否则返回 0
+  - G6 ky_scene_load 要求每个 entity 至少含一个 Transform 组件，否则返回 -4
 
 [Project Knowledge Summary]
 - Date: 2026-09-04
