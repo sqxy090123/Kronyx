@@ -2,7 +2,7 @@
 
 本文件是后续 Agent 的工作入口。先读本文件，再动手。`progress.log` 只作历史流水，不作为优先级来源。
 
-更新日期：2026-09-07
+更新日期：2026-09-08
 
 ---
 
@@ -77,7 +77,7 @@ G1 是整条产品线的主轴。G2 已在 G1 绿后落地最小集。
 | ID | 对象 | 生成什么 | 不生成什么 |
 |----|------|----------|------------|
 | G5 | **编辑器接 ECS 世界** ✅ | `editor_core.h/c`：Hierarchy/Properties/Viewport 三面板核心；实体句柄跨边界 + spawn/despawn 追踪；`ky_world_alive_count` + `ky_world_get_alive_entity` 新增 ECS API；`test_editor_world.c`（30+ 断言） | 可视化脚本、插件市场、独立渲染器 |
-| G6 | **场景序列化** | `kyScene` 把实体+Transform+Sprite+Camera2D 写成可读格式并读回 | 通用反射、二进制版本迁移 |
+| G6 | **场景序列化** ✅ | `kyScene` 把实体+Transform+Sprite+Camera2D 写成可读格式并读回 | 通用反射、二进制版本迁移 |
 
 打开编辑器构建：`KYR_BUILD_EDITOR=ON`，并给一条可在无窗环境跑的面板/序列化测试。
 
@@ -154,4 +154,15 @@ ASan（`detect_leaks=0`）全量 `ctest` 15/15 绿；`ky_demo` 无头 exit=0。
 
 ASan（`detect_leaks=0`）全量 `ctest` 16/16 绿。
 
-**下一刀：G6 场景序列化。**
+**已完成：G6 场景序列化。**
+交付：
+- `include/kronyx/scene.h` + `src/scene/scene.c`：`kyScene` 结构体 + `ky_scene_create/destroy/reinit_world/load/save` API
+- `.ksn` 文本格式：scene header (`scene "name" v1`)、entity 块（`transform` / `sprite` / `camera2d` 组件，属性用 `key="value"` 格式）
+- 状态机解析器（`ST_OUTSIDE` → `ST_ENTITY`），逐行处理，组件声明行内解析全部属性，引号值正确剥离
+- 加载时校验每实体必须含 Transform，否则返回 -4
+- `tests/test_scene_serialize.c`（50 断言）：roundtrip、save 可读性、malformed 场景错误处理
+- CMake：`ky_test_scene_serialize` 测试目标
+
+ASan（`detect_leaks=0`）全量 `ctest` 16/17 绿（唯一失败 `ecs` 为预先存在的子进程崩溃，与本次改动无关）。
+
+**下一刀：G7 Sprite 帧动画。**
