@@ -192,3 +192,12 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 
 测试结果：普通构建 18/18 绿，ASan 构建 18/18 绿。
 Issue: https://github.com/sqxy090123/Kronyx/issues/2（已关闭）
+
+**已完成：安全漏洞审计与修复——VM OOB/UB + AST 内存泄漏**
+从攻击者视角设计了利用游戏脚本引擎漏洞的 PoC 攻击场景，发现并修复 3 个安全漏洞：
+- **AST 内存泄漏 (LOW)**: `ast_free_node` 对 BINOP/UNOP/CALL.callee/INDEX 子节点使用 `free()` 而非 `ast_free()`，导致每次脚本解析泄漏 4-12 字节。已修复为递归释放。
+- **移位操作 UB (HIGH)**: `OP_BSHL/OP_BSHR` 未检查移位量边界，`1 << 100` 等触发 signed shift overflow UB。已修复为无符号移位 + [0,62] 范围限制。
+- **OP_CALL 越界读取 (MEDIUM)**: `fn_reg` 参数缺少栈边界验证，恶意字节码可导致越界读。已添加 `fn_reg` 和 `base+fn_reg+nargs` 的范围检查。
+
+测试：普通构建 18/18 绿，ASan 构建 18/18 绿。
+审计报告：`.monkeycode/docs/SECURITY_AUDIT.md`
