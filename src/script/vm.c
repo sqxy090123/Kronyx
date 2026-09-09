@@ -97,11 +97,17 @@ static kyValue float_val(double f) {
 
 static double to_float(kyValue v) {
     if (v.type == KYT_FLOAT) return v.as.fval;
-    if (v.type == KYT_INT) return (double)v.as.ival;
+    if (v.type == KYT_INT)   return (double)v.as.ival;
+    if (v.type == KYT_BOOL)  return v.as.ival ? 1.0 : 0.0;
     return 0.0;
 }
 
-static int64_t to_int(kyValue v) { return (int64_t)to_float(v); }
+static int64_t to_int(kyValue v) {
+    double d = to_float(v);
+    if (d >= 9.223372036854775807e18)   return INT64_MAX;
+    if (d <= -9.223372036854775808e18) return INT64_MIN;
+    return (int64_t)d;
+}
 static int val_truthy(kyValue v) {
     return v.type != KYT_NIL && !(v.type == KYT_BOOL && !v.as.ival);
 }
@@ -120,7 +126,7 @@ static const char *proto_str(const kyProto *p, int i) {
 static kyValue load_const(kyVM *vm, kyProto *proto, int idx) {
     if (idx < 0 || idx >= proto->const_count) return nil_val();
     double val = proto->constants[idx];
-    if (val == (double)(int64_t)val && fabs(val) < 1e15) {
+    if (fabs(val) < 1e15 && val == (double)(int64_t)val) {
         return int_val((int64_t)val);
     }
     return float_val(val);
@@ -198,7 +204,7 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                 vm->stack[base + A] = bool_val(!val_truthy(vm->stack[base + B]));
                 break;
             case OP_BNOT:
-                vm->stack[base + A] = int_val(~(int64_t)to_float(vm->stack[base + B]));
+                vm->stack[base + A] = int_val(~to_int(vm->stack[base + B]));
                 break;
             case OP_EQ:
             case OP_NEQ:

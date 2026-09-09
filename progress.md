@@ -201,3 +201,11 @@ Issue: https://github.com/sqxy090123/Kronyx/issues/2（已关闭）
 
 测试：普通构建 18/18 绿，ASan 构建 18/18 绿。
 审计报告：`.monkeycode/docs/SECURITY_AUDIT.md`
+
+**已完成：to_float/to_int 类型处理漏洞修复** (Issue #4)
+- **to_float 缺少 KYT_BOOL 分支 (MEDIUM, 真实 bug)**: 所有位运算 (`&`,`|`,`^`,`~`,`<<`,`>>`) 对 boolean 都错误返回 0。PoC: `function f(a){return a & 1;} f(true)` → 0 (应为 1)。已添加 `KYT_BOOL → as.ival ? 1.0 : 0.0` 分支。
+- **to_int 缺少饱和保护 (安全加固)**: `(int64_t)1e300` 在 C 标准中是 UB。虽 lexer 不支持科学计数法，但 `to_int` 作为通用辅助函数必须防御。已添加 INT64_MAX/INT64_MIN 饱和。
+- **load_const 短路顺序 UB (安全加固)**: `val == (double)(int64_t)val && fabs(val) < 1e15` 中 cast 子表达式先求值，对大值触发 UB。已调整为 `fabs(val) < 1e15` 在前短路。
+- **OP_BNOT 独立走 to_float+cast** 路径也有同样的 UB 风险。已重写为 `~to_int(...)`。
+
+测试：18/18 ctest 在普通和 ASan+UBSan 构建下全部通过，PoC 矩阵 (9 用例) 全部返回正确值。
