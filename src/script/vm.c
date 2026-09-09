@@ -224,9 +224,15 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
             }
             case OP_BAND: case OP_BOR: case OP_BXOR: case OP_BSHL: case OP_BSHR: {
                 int64_t x = to_int(vm->stack[base + B]), y = to_int(vm->stack[base + C]);
-                int64_t r = opcode == OP_BAND ? (x & y) : opcode == OP_BOR ? (x | y)
-                          : opcode == OP_BXOR ? (x ^ y)
-                          : opcode == OP_BSHL ? (x << (int)y) : (x >> (int)y);
+                int shift = (int)((uint64_t)y & 63u);
+                /* Clamp left-shift to [0,62] to avoid signed overflow UB.
+                 * Right-shift by 63 is implementation-defined but safe. */
+                int64_t r;
+                if (opcode == OP_BAND)       r = x & y;
+                else if (opcode == OP_BOR)   r = x | y;
+                else if (opcode == OP_BXOR)  r = x ^ y;
+                else if (opcode == OP_BSHL)  r = shift >= 63 ? 0 : (int64_t)((uint64_t)x << shift);
+                else                           r = x >> shift;
                 vm->stack[base + A] = int_val(r);
                 break;
             }
@@ -258,6 +264,7 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                 int fn_reg = A;
                 int nargs = B - 1;
                 if (nargs < 0) nargs = 0;
+                if (fn_reg < 0 || fn_reg >= KY_MAX_STACK || base + fn_reg + nargs >= KY_MAX_STACK) break;
                 kyValue fn = vm->stack[base + fn_reg];
                 if (fn.type == KYT_FUNCTION) {
                     kyClosure *cl = (kyClosure *)(void *)fn.as.closure;
