@@ -71,6 +71,13 @@ KY_API int  ky_physics_get_contact_count(const kyPhysicsWorld *pw);
 KY_API int  ky_physics_get_contact(const kyPhysicsWorld *pw, uint32_t idx,
                                    uint32_t *out_a, uint32_t *out_b);
 
+/* Collision events */
+#define KY_EVENT_COLLIDE "collide"
+typedef struct kyCollision {
+    uint32_t body_a;
+    uint32_t body_b;
+} kyCollision;
+
 /* Extents for broadphase hooks */
 typedef struct kyExtents {
     kyVec3 min;

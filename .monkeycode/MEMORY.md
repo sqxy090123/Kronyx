@@ -182,3 +182,12 @@ Entries discovered by the Agent during task execution should follow this format:
   - ky_world_add_component 迁移 entity 到新模式 archetype 后，之前持有的 component 指针可能失效（archetype 数据搬移）；step 后必须用 ky_world_get_component 重新获取
   - ky_world_component_type_by_name 在组件注册前返回 UINT32_MAX；必须先 register 再 lookup
   - ECS system 的 kySystem.order 是 uint32_t；传 -1 会溢出为 4294967295，排在最后
+
+[Project Knowledge Summary]
+- Date: 2026-09-09
+- Context: Discovered by Agent while completing G8 collision callback export slice
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 物理碰撞事件契约：ky_physics_step 会对每个 still-alive contact pair 同步触发 KY_EVENT_COLLIDE("collide")，payload 是 kyCollision{body_a,body_b}；持续接触会在每一帧重复触发，不会只在进入时触发一次；payload 是事件触发时的值，需要持久数据须在回调里即时拷贝
+  - 物理事件在 resolve 之后、step 返回前触发，回调里不要调用会改动 world 状态的 ky_physics_*（避免在遍历 pair 期间修改内部数组）
+  - 新增公开事件契约应遵循：事件名常量 + payload struct 放公开头文件（physics.h），内部结构（physics_internal.h 的 kyContactPair）不得直接作为事件 payload 暴露

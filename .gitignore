@@ -12,3 +12,4 @@ cache/
 .idea/
 __pycache__/
 *.pyc
+build_asan/

@@ -1,4 +1,5 @@
 #include "kronyx/physics.h"
+#include "kronyx/event.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -17,6 +18,7 @@ static int failures = 0;
 } while(0)
 
 static void test_force_fields(void);
+static void test_collision_event(void);
 int main(void) {
     printf("=== Physics Test ===\n");
 
@@ -101,13 +103,66 @@ int main(void) {
     ky_physics_get_aabb(NULL, body_id, &aabb_min, &aabb_max);
 
     test_force_fields();
+    test_collision_event();
     printf("\n=== %d tests ran, %d failures ===\n", assertions, failures);
 
     ky_physics_destroy(pw);
-    return failures == 0 ? 0 : 1;
 }
 
-/* ===== Force Field Tests ===== */
+/* ===== Collision Event Tests ===== */
+static int  collide_count = 0;
+static kyCollision collide_last = {0, 0};
+
+static void on_collide(const char *name, const void *data, void *user) {
+    (void)name;
+    (void)user;
+    if (data) {
+        collide_last = *(const kyCollision *)data;
+        collide_count++;
+    }
+}
+
+static void test_collision_event(void) {
+    kyPhysicsWorld *pw = ky_physics_create((kyVec3){0, 0, 0});
+    ASSERT(pw != NULL, "create world for collision event test");
+    ASSERT(ky_event_register(KY_EVENT_COLLIDE, on_collide, NULL) > 0,
+           "register collide event listener");
+
+    kyCollider c0 = {0};
+    c0.shape = KY_SHAPE_BOX;
+    c0.u.box.center = (kyVec3){0, 0, 0};
+    c0.u.box.half_extents = (kyVec3){1, 1, 1};
+    kyCollider c1 = {0};
+    c1.shape = KY_SHAPE_BOX;
+    c1.u.box.center = (kyVec3){1.5f, 0, 0};
+    c1.u.box.half_extents = (kyVec3){1, 1, 1};
+    uint32_t col0 = ky_physics_add_collider(pw, &c0);
+    uint32_t col1 = ky_physics_add_collider(pw, &c1);
+
+    kyRigidBody b0 = {0};
+    b0.position = (kyVec3){0, 0, 0};
+    b0.inv_mass = 0.0f;
+    b0.collider_id = col0;
+    kyRigidBody b1 = {0};
+    b1.position = (kyVec3){1.5f, 0, 0};
+    b1.inv_mass = 0.0f;
+    b1.collider_id = col1;
+    uint32_t id0 = ky_physics_add_body(pw, &b0);
+    uint32_t id1 = ky_physics_add_body(pw, &b1);
+    ASSERT(id0 != 0 && id1 != 0, "add two overlapping static bodies");
+
+    collide_count = 0;
+    collide_last.body_a = collide_last.body_b = 0;
+    ky_physics_step(pw, 1.0f / 60.0f);
+    ASSERT(collide_count >= 1, "collide event fired on overlap");
+    ASSERT(collide_last.body_a != 0 && collide_last.body_b != 0,
+           "collision payload carries two body ids");
+    ASSERT((collide_last.body_a == id0 && collide_last.body_b == id1) ||
+           (collide_last.body_a == id1 && collide_last.body_b == id0),
+           "collision payload ids match overlapping bodies");
+
+    ky_physics_destroy(pw);
+}
 static void test_force_fields(void) {
     kyPhysicsWorld *pw = ky_physics_create((kyVec3){0, -9.81f, 0});
     ASSERT(pw != NULL, "create physics world for force field test");

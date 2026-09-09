@@ -86,7 +86,7 @@ G1 是整条产品线的主轴。G2 已在 G1 绿后落地最小集。
 | ID | 对象 | 前置 | 备注 |
 |----|------|------|------|
 | G7 | **Sprite 帧动画** ✅ | G1 | 时间轴 + 图集 UV，不接骨骼 |
-| G8 | 碰撞回调导出 | G1 | 物理 contact → `ky_event_*`，供 demo/脚本 |
+| G8 | **碰撞回调导出** ✅ | G1 | 物理 contact → `ky_event_*`，供 demo/脚本 |
 | G9 | 关节 / constraints | 3D 或复杂 2D 需要时 | 现物理无 joint API |
 | G10 | 粒子 | G7 之后 | |
 | G11 | 音频 | 至少 G1 可玩 | 现无 `audio.h`，从零开模块需单独规格 |
@@ -165,11 +165,11 @@ ASan（`detect_leaks=0`）全量 `ctest` 16/16 绿。
 
 ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 
-**已完成：G7 Sprite 帧动画。**
+**已完成：G8 碰撞回调导出。**
 交付：
-- `include/kronyx/anim2d.h` + `src/render/anim2d.c`：`kyAnimator` 组件（cols/frames/fps/looping/time/current_frame）、`ky_animator_new/frame_uv/apply_to_sprite` API、ECS system `sprite-animator`（遍历 sprite+animator view，按 fps 推进帧并写入 sprite UV）
-- 图集 UV 按行优先网格计算：`col = f % cols, row = f / cols`，单元格 UV = `[col/cols, row/nrows)` 到 `[(col+1)/cols, (row+1)/nrows)`，`nrows = ceil(frames/cols)`
-- `tests/test_spritesheet.c`（30 断言）：defaults、单帧 UV、1×N 竖条、2×3 网格、apply_to_sprite、system 推进帧、loop wrap、non-loop clamp、invalid params、无 system 时不前进
-- 关键 bug 修复：`while(ky_view_begin() || ky_view_next())` 每次迭代重置迭代器 → 改为 `int more = begin(); while(more) { more = next(); }`
+- `include/kronyx/physics.h`：公开碰撞事件契约 `#define KY_EVENT_COLLIDE "collide"` + `kyCollision { body_a, body_b }` payload
+- `src/physics/physics.c`：`ky_physics_step` 对每个存活 contact pair 同步触发 `KY_EVENT_COLLIDE`，payload 由内部 `kyContactPair*` 改为公开 `kyCollision` 值（回调内有效，需即时拷贝）
+- `tests/test_physics.c`（+7 断言）：注册 `ky_event_register(KY_EVENT_COLLIDE, ...)`，两重叠静态 box step 后断言事件触发 ≥1 次、payload 携带两 body id 且与 body 匹配
+- 消费方：demo/宿主代码 `ky_event_register(KY_EVENT_COLLIDE, fn, user)` 即可收到每 step 每存活接触对的回调；脚本侧桥接留待绑定层（kyx 尚无 event native）
 
-**下一刀：G8 碰撞回调导出。**
+**下一刀：G9 关节 / constraints（现物理无 joint API，从零开模块需单独规格）。**

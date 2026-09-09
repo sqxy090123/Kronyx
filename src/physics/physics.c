@@ -272,7 +272,8 @@ void ky_physics_step(kyPhysicsWorld *pw, float dt) {
     for (int i = 0; i < pw->pair_count; i++) {
         const kyContactPair *p = &pw->pairs[i];
         if (!p->alive) continue;
-        ky_event_trigger("collide", p);
+        kyCollision ev = { p->body_a, p->body_b };
+        ky_event_trigger(KY_EVENT_COLLIDE, &ev);
     }
 }
 
