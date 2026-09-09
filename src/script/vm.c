@@ -54,6 +54,7 @@ typedef struct kyNativeEntry {
 
 #define KY_MAX_STACK 512
 #define KY_MAX_VARS  1024
+#define KY_MAX_CALL_DEPTH 256
 
 
 #define KY_MAX_PROTOS KYX_MAX_PROTOS
@@ -72,6 +73,7 @@ struct kyVM {
     kyClosure *closures[KYX_MAX_PROTOS];
     kyNativeEntry natives[KYX_MAX_REGISTRY];
     int       stack_top;
+    int       call_depth;
     int       proto_count;
     int       native_count;
     char      error_msg[256];
@@ -126,10 +128,14 @@ static kyValue load_const(kyVM *vm, kyProto *proto, int idx) {
 
 static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
     if (vm->stack_top + 10 > KY_MAX_STACK) {
-        strncpy(vm->error_msg, "stack overflow", sizeof(vm->error_msg));
-        
+        strncpy(vm->error_msg, "heap stack overflow", sizeof(vm->error_msg));
         return nil_val();
     }
+    if (vm->call_depth >= KY_MAX_CALL_DEPTH) {
+        strncpy(vm->error_msg, "call depth exceeded", sizeof(vm->error_msg));
+        return nil_val();
+    }
+    vm->call_depth++;
     int saved_top = vm->stack_top;
     int base = vm->stack_top;
     int pc = 0;
@@ -276,6 +282,7 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                     ret.as.fval = (double)ret.as.ival;
                 }
                 vm->stack_top = saved_top;
+                vm->call_depth--;
                 return ret;
             }
             case OP_GETGLOBAL: {
@@ -327,6 +334,7 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
             }
             case OP_EXIT:
                 vm->stack_top = saved_top;
+                vm->call_depth--;
                 return nil_val();
             case OP_NATIVECALL: {
                 /* A=dest, B=nargs|(name_idx<<8), C=ns_string_idx */
@@ -352,6 +360,7 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
         }
     }
     vm->stack_top = saved_top;
+    vm->call_depth--;
     return nil_val();
 }
 
@@ -369,6 +378,7 @@ void ky_vm_destroy(kyVM *vm) {
             for (int j = 0; j < vm->protos[i].str_count; j++)
                 free(vm->protos[i].strings[j]);
             free(vm->protos[i].strings);
+            free(vm->closures[i]);
         }
         for (int i = 0; i < vm->gvar_count; i++)
             free(vm->gvar_names[i]);
@@ -859,10 +869,10 @@ kyProto *kyx_compile(kyVM *vm, kyAstNode *root, char *err_buf, int err_buf_size)
             if (vm->protos[id].code) {
                 memcpy((void*)vm->protos[id].code, cs.code, code_size);
             }
-            vm->protos[id].code_count = cs.code_count;
             vm->protos[id].constants = cs.constants;
-            vm->protos[id].const_count = cs.const_count;
             vm->protos[id].strings = cs.strings;
+            vm->protos[id].code_count = cs.code_count;
+            vm->protos[id].const_count = cs.const_count;
             vm->protos[id].str_count = cs.str_count;
             vm->protos[id].param_count = 0;
             vm->protos[id].name = strdup("__top__");
@@ -870,11 +880,23 @@ kyProto *kyx_compile(kyVM *vm, kyAstNode *root, char *err_buf, int err_buf_size)
             if (vm->closures[id]) {
                 vm->closures[id]->proto = &vm->protos[id];
             }
-        } else {
-            free(cs.code);
-            free(cs.constants);
-            free(cs.strings);
+            if (!vm->protos[id].code || !vm->protos[id].name || !vm->closures[id]) {
+                free(vm->protos[id].code);
+                free(vm->protos[id].name);
+                free(vm->closures[id]);
+                vm->protos[id].code = NULL;
+                vm->protos[id].name = NULL;
+                vm->closures[id] = NULL;
+                cs.constants = NULL;
+                cs.strings = NULL;
+            } else {
+                cs.constants = NULL;
+                cs.strings = NULL;
+            }
         }
+        if (cs.code) free(cs.code);
+        if (cs.constants) free(cs.constants);
+        if (cs.strings) free(cs.strings);
         for (int j = 0; j < cs.local_count; j++) free(cs.local_names[j]);
     }
 
@@ -906,10 +928,10 @@ kyProto *kyx_compile(kyVM *vm, kyAstNode *root, char *err_buf, int err_buf_size)
             if (vm->protos[id].code) {
                 memcpy((void*)vm->protos[id].code, cs.code, code_size);
             }
-            vm->protos[id].code_count = cs.code_count;
             vm->protos[id].constants = cs.constants;
-            vm->protos[id].const_count = cs.const_count;
             vm->protos[id].strings = cs.strings;
+            vm->protos[id].code_count = cs.code_count;
+            vm->protos[id].const_count = cs.const_count;
             vm->protos[id].str_count = cs.str_count;
             vm->protos[id].param_count = cs.param_count;
             vm->protos[id].name = strdup(stmt->as.func_decl.name);
@@ -917,11 +939,23 @@ kyProto *kyx_compile(kyVM *vm, kyAstNode *root, char *err_buf, int err_buf_size)
             if (vm->closures[id]) {
                 vm->closures[id]->proto = &vm->protos[id];
             }
-        } else {
-            free(cs.code);
-            free(cs.constants);
-            free(cs.strings);
+            if (!vm->protos[id].code || !vm->protos[id].name || !vm->closures[id]) {
+                free(vm->protos[id].code);
+                free(vm->protos[id].name);
+                free(vm->closures[id]);
+                vm->protos[id].code = NULL;
+                vm->protos[id].name = NULL;
+                vm->closures[id] = NULL;
+                cs.constants = NULL;
+                cs.strings = NULL;
+            } else {
+                cs.constants = NULL;
+                cs.strings = NULL;
+            }
         }
+        if (cs.code) free(cs.code);
+        if (cs.constants) free(cs.constants);
+        if (cs.strings) free(cs.strings);
         for (int j = 0; j < cs.local_count; j++) free(cs.local_names[j]);
     }
 

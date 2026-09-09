@@ -97,6 +97,20 @@ static void ast_free_node(kyAstNode *n) {
             for (int i = 0; i < n->as.anon_func.param_count; i++) free(n->as.anon_func.params[i]);
             free(n->as.anon_func.params); ast_free(n->as.anon_func.body); free(n->as.anon_func.proto); break;
         case KY_AST_EXPR_TERNARY: ast_free(n->as.ternary.cond); ast_free(n->as.ternary.true_b); ast_free(n->as.ternary.false_b); break;
+        case KY_AST_EXPR_BINOP:
+            free(n->as.binop.left); free(n->as.binop.right); break;
+        case KY_AST_EXPR_UNOP:
+            free(n->as.unop.operand); break;
+        case KY_AST_EXPR_IDENT:
+            free(n->as.ident.name); break;
+        case KY_AST_EXPR_CALL:
+            for (int i = 0; i < n->as.call.arg_count; i++) ast_free(n->as.call.args[i]);
+            free(n->as.call.args); free(n->as.call.callee); break;
+        case KY_AST_EXPR_INDEX:
+            free(n->as.index.obj); free(n->as.index.idx); break;
+        case KY_AST_PROGRAM:
+            for (int i = 0; i < n->as.program.count; i++) ast_free(n->as.program.children[i]);
+            free(n->as.program.children); break;
         default: break;
     }
     free(n);
