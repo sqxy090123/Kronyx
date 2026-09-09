@@ -47,3 +47,12 @@ function test() { return f(1, 100); }  // 1 << 100 = UB
 `free()` 而非 `ast_free()`，导致递归子树中的 IDENT/STRING 等动态分配内存泄漏。
 **影响**: 每次脚本解析泄漏约 4-12 字节，长期运行会导致内存持续增长。
 **修复**: 将 `free()` 替换为 `ast_free()` 以正确递归释放子节点。
+
+### 攻击面 5: to_float/to_int 类型处理漏洞 (已修复 - Issue #4)
+**漏洞类型**: 逻辑错误 (boolean 被当 0) + 未定义行为 (大浮点转 int)
+**严重性**: MEDIUM
+**描述 1**: `to_float` 缺少 `KYT_BOOL` 分支，所有位运算对布尔值都返回 0。
+**PoC**: `function f(a){return a & 1;} f(true)` → 0 (应为 1)
+**描述 2**: `to_int` 的 `(int64_t)d` 对 `|d|>INT64_MAX` 触发 UB。
+**描述 3**: `load_const` 中 `val == (double)(int64_t)val && fabs(val)<1e15` 的 cast 先求值，UB。
+**修复**: 加 bool 分支；to_int 饱和到 INT64_MAX/MIN；load_const 调整短路顺序；OP_BNOT 改走 to_int。
