@@ -321,7 +321,7 @@ static kyAstNode *parse_expression(kyParser *p, int min_prec) {
             next_min_prec = 0;
         }
         n->as.binop.right = parse_expression(p, next_min_prec);
-        if (!n->as.binop.right) { ast_free(n); return left; }
+        if (!n->as.binop.right) { free(n); return left; }
         left = n;
     }
     return left;

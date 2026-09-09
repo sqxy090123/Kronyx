@@ -56,3 +56,17 @@ function test() { return f(1, 100); }  // 1 << 100 = UB
 **描述 2**: `to_int` 的 `(int64_t)d` 对 `|d|>INT64_MAX` 触发 UB。
 **描述 3**: `load_const` 中 `val == (double)(int64_t)val && fabs(val)<1e15` 的 cast 先求值，UB。
 **修复**: 加 bool 分支；to_int 饱和到 INT64_MAX/MIN；load_const 调整短路顺序；OP_BNOT 改走 to_int。
+
+### 攻击面 6: parse_expression 错误路径悬垂返回 (已修复 - Issue #5)
+**漏洞类型**: Use-After-Free / Double-Free (ASan 可稳定复现)
+**严重性**: HIGH
+**描述**: `parse_expression` 在二元操作右操作数解析失败时执行 `ast_free(n); return left;`，
+其中 `ast_free(n)` 已递归释放挂在 `n->as.binop.left` 上的 `left`，导致返回给调用方的
+是悬垂指针，上层继续引用并在 `kyx_parser_destroy` 时二次释放。
+**PoC** (任一即触发 ASan):
+```
+function f(){return 1 + ;}
+var a = =;
+function f(){return (1 + ;)}
+```
+**修复**: 错误路径改为 `free(n)`，只释放 BINOP 节点自身，保留 `left` 的调用方所有权。

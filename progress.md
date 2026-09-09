@@ -209,3 +209,12 @@ Issue: https://github.com/sqxy090123/Kronyx/issues/2（已关闭）
 - **OP_BNOT 独立走 to_float+cast** 路径也有同样的 UB 风险。已重写为 `~to_int(...)`。
 
 测试：18/18 ctest 在普通和 ASan+UBSan 构建下全部通过，PoC 矩阵 (9 用例) 全部返回正确值。
+
+**已完成：parse_expression 错误路径 UAF/双释放修复** (Issue #5)
+- 漏洞：`parse_expression` 在二元操作右操作数解析失败时 `ast_free(n); return left;`，
+  `ast_free(n)` 已递归释放挂在 `n->as.binop.left` 上的 `left`，返回悬垂指针给调用方，
+  上层 `kyx_parser_destroy` 在二次释放时触发 ASan SEGV/double-free。
+- 最小 PoC：`function f(){return 1 + ;}`、`var a = =;`、`function f(){return (1 + ;)}`
+- 根因：归所有权转移给 BINOP 节点后，错误恢复路径错误地递归释放了仍归调用方所有的左子树。
+- 修复：错误路径改为 `free(n)`，仅释放 BINOP 节点，保留 `left` 的所有权。
+- 测试：PoC 现在返回干净 parse error，18/18 ctest 在普通和 ASan 构建下全部通过。
