@@ -172,4 +172,13 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 - `tests/test_physics.c`（+7 断言）：注册 `ky_event_register(KY_EVENT_COLLIDE, ...)`，两重叠静态 box step 后断言事件触发 ≥1 次、payload 携带两 body id 且与 body 匹配
 - 消费方：demo/宿主代码 `ky_event_register(KY_EVENT_COLLIDE, fn, user)` 即可收到每 step 每存活接触对的回调；脚本侧桥接留待绑定层（kyx 尚无 event native）
 
-**下一刀：G9 关节 / constraints（现物理无 joint API，从零开模块需单独规格）。**
+**已完成：代码体检——`src/script/vm.c`（967→919 行，-52/+100，行为等价）。**
+交付（全部为死代码/冗余消除，普通 + ASan 全量 18/18 保持全绿）：
+- VM 结构瘦身：删 `protos_code[KYX_MAX_PROTOS*256]`（约 1 MiB calloc 空间，实际从未使用，代码走动态 malloc）、`frames[]/frame_count`（写不读）、`locals[]`、`strings[]/string_count`、`native_names[]`（strdup 冗余，`natives[i].ns` 已是 64B 副本）、`error_flag`/`running`（写不读）
+- 删死类型：`kyFrame`、`kyArray`；`kyClosure.upvals/n_upvals`、`proto.max_stack`（两处 `=16` 死赋值）
+- `ky_vm_create` 精简：calloc 全零即 KYT_NIL/0（`KYT_NIL==0`），删除全部显式清零与两个初始化循环
+- `ky_vm_register_native` 不再 `strdup` namespace（消除每次注册 1 次小分配 + destroy 释放路径）
+- `compile_alloc_local` 复用 `compile_find_local`（删重复线性查找）
+- 编译段 36 处 magic number opcode → 枚举名（`OP_LOADNIL` 等，数值一一对应，语义不变）
+
+**下一刀：P3 按顺序的下一个生成对象 G10 粒子（前置 G7 已满足）；或按实际需要继续代码体检/用户指派维护。**

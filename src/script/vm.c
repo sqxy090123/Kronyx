@@ -35,22 +35,15 @@ typedef struct kyProto {
     char     **strings;
     int        str_count;
     int        str_cap;
-    int        max_stack;
+    
     int        param_count;
     char     *name;
 } kyProto;
 
 typedef struct kyClosure {
     kyProto   *proto;
-    kyValue   *upvals;
-    int        n_upvals;
 } kyClosure;
 
-typedef struct kyArray {
-    kyValue *data;
-    int      len;
-    int      cap;
-} kyArray;
 
 typedef struct kyNativeEntry {
     kyValue (*fn)(struct kyVM *, kyValue *args, int argc, void *user);
@@ -61,18 +54,12 @@ typedef struct kyNativeEntry {
 
 #define KY_MAX_STACK 512
 #define KY_MAX_VARS  1024
-#define KY_MAX_UPVAL 64
-#define KY_MAX_CALLS 256
+
+
 #define KY_MAX_PROTOS KYX_MAX_PROTOS
 #define KY_MAX_REGISTRY KYX_MAX_REGISTRY
-#define KY_MAX_STRINGS KYX_MAX_STRINGS
 
-typedef struct kyFrame {
-    kyClosure  *closure;
-    int         base;
-    int         pc;
-    int         top;
-} kyFrame;
+
 
 typedef struct kyVM kyVM;
 struct kyVM {
@@ -81,21 +68,13 @@ struct kyVM {
     kyValue   gvar_vals[KY_MAX_VARS];
     int       gvar_count;
     int       top_ran;
-    kyValue   locals[KY_MAX_VARS];
-    kyInstr   protos_code[KYX_MAX_PROTOS * 256];  // 预分配代码空间
     kyProto   protos[KYX_MAX_PROTOS];
     kyClosure *closures[KYX_MAX_PROTOS];
     kyNativeEntry natives[KYX_MAX_REGISTRY];
-    char          *native_names[KYX_MAX_REGISTRY];
-    char     *strings[KYX_MAX_STRINGS];
-    int       string_count;
     int       stack_top;
-    int       frame_count;
-    kyFrame   frames[KYX_MAX_CALLS];
     int       proto_count;
-    int       error_flag;
+    int       native_count;
     char      error_msg[256];
-    int       running;
 };
 
 static kyValue nil_val(void) {
@@ -148,7 +127,7 @@ static kyValue load_const(kyVM *vm, kyProto *proto, int idx) {
 static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
     if (vm->stack_top + 10 > KY_MAX_STACK) {
         strncpy(vm->error_msg, "stack overflow", sizeof(vm->error_msg));
-        vm->error_flag = 1;
+        
         return nil_val();
     }
     int saved_top = vm->stack_top;
@@ -316,7 +295,7 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                     }
                 }
                 /* also look up native functions registered under this name */
-                for (int i = 0; i < vm->proto_count && i < KYX_MAX_REGISTRY && !found; i++) {
+                for (int i = 0; i < vm->native_count && !found; i++) {
                     if (vm->natives[i].fn &&
                         strcmp(vm->natives[i].name, name) == 0) {
                         vm->stack[base + A] = (kyValue){KYT_NATIVE, .as.native = (void*)&vm->natives[i]};
@@ -358,10 +337,10 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                 const char *nm = proto_str(proto, B >> 8);
                 int nargs = B & 0xFF;
                 kyValue *arg_base = &vm->stack[base + A + 1];
-                for (int i = 0; i < vm->proto_count && i < KYX_MAX_REGISTRY; i++) {
+                for (int i = 0; i < vm->native_count && nm && ns; i++) {
                     if (vm->natives[i].fn &&
-                        strcmp(vm->natives[i].ns, ns ? ns : "") == 0 &&
-                        strcmp(vm->natives[i].name, nm ? nm : "") == 0) {
+                        strcmp(vm->natives[i].ns, ns) == 0 &&
+                        strcmp(vm->natives[i].name, nm) == 0) {
                         vm->stack[base + A] = vm->natives[i].fn(vm, arg_base, nargs, vm->natives[i].user);
                         break;
                     }
@@ -378,18 +357,7 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
 
 kyVM *ky_vm_create(const void *info) {
     KY_UNUSED(info);
-    kyVM *vm = (kyVM *)calloc(1, sizeof(kyVM));
-    if (!vm) return NULL;
-    for (int i = 0; i < KY_MAX_STACK; i++) vm->stack[i] = nil_val();
-    for (int i = 0; i < KYX_MAX_REGISTRY; i++) vm->natives[i].fn = NULL;
-    vm->stack_top = 0;
-    vm->frame_count = 0;
-    vm->proto_count = 0;
-    vm->gvar_count = 0;
-    vm->top_ran = 0;
-    vm->error_flag = 0;
-    vm->running = 0;
-    return vm;
+    return (kyVM *)calloc(1, sizeof(kyVM));
 }
 
 void ky_vm_destroy(kyVM *vm) {
@@ -402,8 +370,6 @@ void ky_vm_destroy(kyVM *vm) {
                 free(vm->protos[i].strings[j]);
             free(vm->protos[i].strings);
         }
-        for (int i = 0; i < vm->proto_count && i < KYX_MAX_REGISTRY; i++)
-            free(vm->native_names[i]);
         for (int i = 0; i < vm->gvar_count; i++)
             free(vm->gvar_names[i]);
         free(vm);
@@ -413,7 +379,6 @@ void ky_vm_destroy(kyVM *vm) {
 int ky_vm_load_string(kyVM *vm, const char *src, const char *name) {
     KY_UNUSED(name);
     if (!vm || !src) return -1;
-    if (src[0] == '\0') { vm->error_flag = 0; return 0; }
 
     kyLexer *lx = kyx_lexer_create(src, "script");
     if (!lx) { snprintf(vm->error_msg, sizeof(vm->error_msg), "lexer alloc failed"); return -1; }
@@ -499,13 +464,12 @@ int ky_vm_call(kyVM *vm, const char *func_name, kyValue *args, int argc, kyValue
 
 void ky_vm_register_native(kyVM *vm, const char *ns, const char *name, kyNativeFn fn, void *user) {
     if (!vm || !fn) return;
-    int id = vm->proto_count++;
+    int id = vm->native_count++;
     if (id < KYX_MAX_REGISTRY) {
         vm->natives[id].fn = fn;
         vm->natives[id].user = user;
         strncpy(vm->natives[id].ns, ns ? ns : "", sizeof(vm->natives[id].ns) - 1);
         strncpy(vm->natives[id].name, name ? name : "", sizeof(vm->natives[id].name) - 1);
-        vm->native_names[id] = strdup(ns ? ns : "");
     }
 }
 
@@ -901,7 +865,6 @@ kyProto *kyx_compile(kyVM *vm, kyAstNode *root, char *err_buf, int err_buf_size)
             vm->protos[id].strings = cs.strings;
             vm->protos[id].str_count = cs.str_count;
             vm->protos[id].param_count = 0;
-            vm->protos[id].max_stack = 16;
             vm->protos[id].name = strdup("__top__");
             vm->closures[id] = (kyClosure *)calloc(1, sizeof(kyClosure));
             if (vm->closures[id]) {
@@ -949,7 +912,6 @@ kyProto *kyx_compile(kyVM *vm, kyAstNode *root, char *err_buf, int err_buf_size)
             vm->protos[id].strings = cs.strings;
             vm->protos[id].str_count = cs.str_count;
             vm->protos[id].param_count = cs.param_count;
-            vm->protos[id].max_stack = 16;
             vm->protos[id].name = strdup(stmt->as.func_decl.name);
             vm->closures[id] = (kyClosure *)calloc(1, sizeof(kyClosure));
             if (vm->closures[id]) {
