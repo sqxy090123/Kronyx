@@ -182,3 +182,13 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 - `compile_expression` 赋值操作符检测从 5 次 `strcmp` 链改为两字符直接比较
 
 **下一刀：P3 按顺序的下一个生成对象 G10 粒子（前置 G7 已满足）；或按实际需要继续代码体检/用户指派维护。**
+
+**已完成：安全漏洞扫描与修复——`src/script/vm.c` + `src/script/parser.c`**
+发现并修复 3 个严重 bug：
+- **Bug 1（CRITICAL）**：深度递归导致 C 栈溢出崩溃。`call_proto` 仅检查堆栈溢出，未限制 C 调用栈深度。恶意脚本 `function deep(n) { return deep(n-1); } deep(10000);` 触发栈溢出。修复：添加 `call_depth` 字段 + `KY_MAX_CALL_DEPTH=256` 限制。
+- **Bug 2**：AST 解析器内存泄漏。`ast_free_node` 缺少 `KY_AST_PROGRAM` 分支及多个叶子节点类型（BINOP、UNOP、IDENT、CALL、INDEX），导致每次 `ky_vm_load_string` 解析时泄漏约 4.5KB。修复：补全所有 AST 节点类型的正确释放逻辑。
+- **Bug 3**：编译器资源泄漏。`kyx_compile` 在 proto 分配失败时未正确清理 compile state 资源，导致 double-free 风险。修复：添加空指针守卫 + 统一清理路径。
+- **Bonus**：`ky_vm_destroy` 未释放 `closures[]` 数组，添加 `free(vm->closures[i])`。
+
+测试结果：普通构建 18/18 绿，ASan 构建 18/18 绿。
+Issue: https://github.com/sqxy090123/Kronyx/issues/2（已关闭）
