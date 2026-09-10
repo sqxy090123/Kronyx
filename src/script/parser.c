@@ -514,12 +514,17 @@ static kyAstNode *parse_statement(kyParser *p) {
         tok_consume(p, KYX_TK_SEMI, "expected ';'");
         return n;
     }
-    kyAstNode *expr = parse_expression(p, 0);
-    if (!expr) return NULL;
-    if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_SEMI) tok_advance(p);
-    kyAstNode *n = ast_new(KY_AST_EXPR_STMT, t->line);
-    n->as.expr_stmt.expr = expr;
-    return n;
+     if (t->kind == KYX_TK_LBRACE) {
+         kyAstNode *block = parse_block(p);
+         if (!block) return NULL;
+         return block;
+     }
+     kyAstNode *expr = parse_expression(p, 0);
+     if (!expr) return NULL;
+     if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_SEMI) tok_advance(p);
+     kyAstNode *n = ast_new(KY_AST_EXPR_STMT, t->line);
+     n->as.expr_stmt.expr = expr;
+     return n;
 }
 
 kyParser *kyx_parser_create(void *stream) {
