@@ -504,6 +504,17 @@ static void test_global_vars(void) {
     ky_vm_destroy(vm);
 }
 
+static void test_class_decl_parse(void) {
+    kyVM *vm = ky_vm_create(NULL);
+    ASSERT(vm != NULL, "create VM for class decl");
+    /* Regression: parser wrote to a NULL char* parent (parser.c class branch) */
+    int r = ky_vm_load_string(vm, "class Foo {}", "class1");
+    ASSERT(r == 0, "load 'class Foo {}'");
+    r = ky_vm_load_string(vm, "class Foo Bar {}", "class2");
+    ASSERT(r == 0, "load 'class Foo Bar {}'");
+    ky_vm_destroy(vm);
+}
+
 int main(void) {
     printf("=== Script (kyx) Test ===\n");
 
@@ -519,6 +530,7 @@ int main(void) {
     test_null_safety();
     printf("10\n"); test_compile_exec();
     test_bitwise_ops();
+    test_class_decl_parse();
     test_global_vars();
 
     printf("\n=== %d tests ran, %d failures ===\n", assertions, failures);

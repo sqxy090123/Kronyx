@@ -79,8 +79,12 @@ static void ast_free_node(kyAstNode *n) {
             free(n->as.func_decl.name);
             for (int i = 0; i < n->as.func_decl.param_count; i++) free(n->as.func_decl.params[i]);
             free(n->as.func_decl.params); ast_free(n->as.func_decl.body); free(n->as.func_decl.proto); break;
-        case KY_AST_CLASS_DECL:
-            free(n->as.class_decl.name); free(n->as.class_decl.parent); free(n->as.class_decl.klass); break;
+        case KY_AST_CLASS_DECL: {
+            kyAstClass *k = n->as.class_decl.klass;
+            free(n->as.class_decl.name); free(n->as.class_decl.parent);
+            if (k) { for (int i = 0; i < k->field_count; i++) ast_free(k->fields[i]); free(k->fields); free(k); }
+            ast_free(n->as.class_decl.body); break;
+        }
         case KY_AST_IF_STMT: ast_free(n->as.if_stmt.cond); ast_free(n->as.if_stmt.then_b); ast_free(n->as.if_stmt.else_b); break;
         case KY_AST_WHILE_STMT: ast_free(n->as.while_stmt.cond); ast_free(n->as.while_stmt.body); break;
         case KY_AST_FOR_STMT: ast_free(n->as.for_stmt.init); ast_free(n->as.for_stmt.cond); ast_free(n->as.for_stmt.inc); ast_free(n->as.for_stmt.body); break;
@@ -399,13 +403,10 @@ static kyAstNode *parse_statement(kyParser *p) {
         if (!cname) return NULL;
         kyAstNode *n = ast_new(KY_AST_CLASS_DECL, t->line);
         n->as.class_decl.name = tok_dup(cname);
-        n->as.class_decl.parent[0] = '\0';
+        n->as.class_decl.parent = NULL;
         n->as.class_decl.klass = (kyAstClass *)calloc(1, sizeof(kyAstClass));
         if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_IDENT) {
-            kyToken *pt = tok_current(p);
-            size_t pl = pt->len;
-            strncpy(n->as.class_decl.parent, pt->start, pl);
-            n->as.class_decl.parent[pl] = '\0';
+            n->as.class_decl.parent = tok_dup(tok_current(p));
             tok_advance(p);
         }
         n->as.class_decl.body = parse_block(p);
