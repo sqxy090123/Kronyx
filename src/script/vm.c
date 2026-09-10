@@ -487,13 +487,12 @@ int ky_vm_call(kyVM *vm, const char *func_name, kyValue *args, int argc, kyValue
 
 void ky_vm_register_native(kyVM *vm, const char *ns, const char *name, kyNativeFn fn, void *user) {
     if (!vm || !fn) return;
+    if (vm->native_count >= KYX_MAX_REGISTRY) return;
     int id = vm->native_count++;
-    if (id < KYX_MAX_REGISTRY) {
-        vm->natives[id].fn = fn;
-        vm->natives[id].user = user;
-        strncpy(vm->natives[id].ns, ns ? ns : "", sizeof(vm->natives[id].ns) - 1);
-        strncpy(vm->natives[id].name, name ? name : "", sizeof(vm->natives[id].name) - 1);
-    }
+    vm->natives[id].fn = fn;
+    vm->natives[id].user = user;
+    strncpy(vm->natives[id].ns, ns ? ns : "", sizeof(vm->natives[id].ns) - 1);
+    strncpy(vm->natives[id].name, name ? name : "", sizeof(vm->natives[id].name) - 1);
 }
 
 const char *ky_vm_last_error(kyVM *vm) {
