@@ -126,3 +126,24 @@ Implementing viewport, hierarchy, property inspector panels.
 - [ ] 长驻 VM 无 GC 的累积分配回收策略
 - [ ] P5 kyx debugger（step/break/watch）+ 脚本 hot reload
 - [ ] P6 2D/3D demo + Vulkan 真 GPU 后端
+
+## Security Audit Round 2 (2026-09-10)
+
+### 已完成 (Done)
+| 项 | 详情 |
+|------|------|
+| [High/DoS] parse_call NULL 解引用崩溃 | parser.c:132，`parse_postfix` 传 NULL base 给 `parse_call` 导致 SEGV；触发：`a?(b:c)`。修复：双重 null check；回归测试 `test_parse_null_safety`。**Issue #8** / **PR #6** (commit 989fa3b) |
+| [Medium] native 注册上限不一致 | vm.c:490 先递增后判界；修复：先判界再递增 |
+| [Medium] 大整数字面量截断 | int64→int 截断，`0xFFFFFFFFFFFFFFFF` 变为 -1；Issue #10 |
+| [Medium] 三元运算符左结合 | parser.c:273 right_assoc=0 应为 1；Issue #9 |
+| [Low] stack 索引缺运行时边界检查 | 37 处 `stack[base+X]` 无 per-op 检查；Issue #11 |
+| ASan ctest 18/18 全绿 | 含新增回归测试 |
+
+### 后续要求 (Pending)
+- [ ] Issue #10 大整数字面量截断修复（OP_LOADFLOAT 或编译期错误）
+- [ ] Issue #9 三元右结合修复（right_assoc=0→1）
+- [ ] Issue #11 stack 边界检查加固
+- [ ] 排查其余 AST 节点"指针当数组写"同类模式
+- [ ] 长驻 VM 无 GC 的累积分配回收策略
+- [ ] P5 kyx debugger + hot reload
+- [ ] P6 2D/3D demo + Vulkan 真 GPU 后端

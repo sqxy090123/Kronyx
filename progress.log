@@ -313,3 +313,33 @@ ctest --test-dir build --output-on-failure
 - [ ] 长驻 VM 累积分配无 GC（字符串/全局名 strdup 手动管理）的回收策略
 - [ ] P5 kyx debugger (step/break/watch) + 脚本 hot reload
 - [ ] P6 2D/3D demo + 真 GPU 环境 Vulkan 后端
+
+## P4 Script 安全审计 Round 2 (2026-09-10)
+### 新发现漏洞与处理:
+- [High/DoS] parse_call NULL 解引用崩溃 (parser.c:132)：`parse_postfix` 将 `parse_expression()` 返回值（可能为 NULL，当括号内表达式解析失败时）直接传给 `parse_call(base)`，后者在 line 132 解引用 `callee->line` 导致 SEGV @ 0x0。触发模式：`a?(b:c)`、`x0?(x1?(x2?x3:x4):x5):x6`、`(a?b:c)?d:e`
+  - [x] 修复：`parse_call` 开头加 `if (!callee) return NULL;`；`parse_postfix` 在调用 `parse_call` 前加 `if (!base) break;`
+  - [x] 回归测试 `test_parse_null_safety`（三种崩溃模式均返回 -1 parse error 而非崩溃）
+  - [x] Issue #8 (https://github.com/sqxy090123/Kronyx/issues/8)
+- [Medium] native 注册上限不一致 (vm.c:490)：先 `native_count++` 再判 `KYX_MAX_REGISTRY`(512)，第 513+ 次注册静默丢弃但计数器继续递增
+  - [x] 修复：改为先判界再递增（`if (vm->native_count >= KYX_MAX_REGISTRY) return;`）
+  - [x] PoC 验证：513 次注册后 n511 仍可正常调用返回 3.0，无崩溃
+- [Medium] 大整数字面量截断为 int32：`compile_emit(cs, 2, dest, (int)t->as.ival, 0)` 中 int64→int 截断，`0xFFFFFFFFFFFFFFFF` 编译为 -1 而非预期值
+  - [ ] 待评审：是否 emit OP_LOADFLOAT 或 compile-time error
+  - [ ] Issue #10 (https://github.com/sqxy090123/Kronyx/issues/10)
+- [Medium] 三元运算符左结合 (parser.c:273)：`{ "?", 11, 0 }` 应为 `{ "?", 11, 1 }`；`a?b:c?d:e` 被解析为 `(a?b:c)?d:e` 而非 `a?b:(c?d:e)`
+  - [ ] 待修复（可能与 Issue #8 关联修复一并处理）
+  - [ ] Issue #9 (https://github.com/sqxy090123/Kronyx/issues/9)
+- [Low] VM stack 索引运行时边界检查缺失：37 处 `stack[base + X]` 访问无 per-instruction 边界验证（仅 call_proto 入口有总栈溢出检查）
+  - [ ] 防御性加固建议（非直接可利用）
+  - [ ] Issue #11（创建失败，后续补）
+### 验证:
+- [x] ASan 构建 `ctest` 18/18 全绿
+- [x] PR #6 已更新包含所有修复（commit `989fa3b`）
+### 后续要求 (Next Steps):
+- [ ] Issue #10 大整数字面量截断修复（编译期 emit OP_LOADFLOAT 或 compile-time error）
+- [ ] Issue #9 三元右结合修复（parser.c:273 right_assoc=0→1）
+- [ ] Issue #11 stack 边界检查加固
+- [ ] 排查其余 AST 节点"指针当数组写"同类模式（`new_expr` / `anon_func` / `call.args` 等）
+- [ ] 长驻 VM 累积分配无 GC（字符串/全局名 strdup 手动管理）的回收策略
+- [ ] P5 kyx debugger (step/break/watch) + 脚本 hot reload
+- [ ] P6 2D/3D demo + 真 GPU 环境 Vulkan 后端
