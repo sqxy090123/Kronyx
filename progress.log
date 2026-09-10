@@ -291,3 +291,25 @@ ctest --test-dir build --output-on-failure
 - [x] 7/7 全绿（render 5.16s，llvmpipe 初始化开销属正常）；渲染断言 19 条全 PASS
 - [x] 后端选型结论：无头环境 GLES3/EGL 已是最优（Vulkan 软件层 lavapipe 收益为负）；枚举已预留 KY_RENDERER_VULKAN，真 GPU 环境再实现
 - [x] 遗留：cl 无 cancel 机制（begin 后不 submit 泄漏）；console 后端 draw_indexed 打印 "verts" 术语误导；cl 首字段=rd 的隐式契约无注释
+
+## P4 Script 安全审计与修复 (2026-09-10)
+### 漏洞发现与处理:
+- [High/DoS] parser.c KY_AST_CLASS_DECL 分支 NULL 解引用崩溃 (parser.c:407-408)：`class_decl.parent` 是指针成员(calloc 后为 NULL)，却被当定长数组写 `parent[0]='\0'` 写零页；父类名路径 `strncpy(parent, src, pl)` 写野地址且 `pl` 无上限——任意 class 声明 (如 `class Foo {}`) 在 `ky_vm_load_string` 解析阶段即 SEGV (ASAN: WRITE @ 0x0)，外部脚本输入可稳定触发
+  - [x] 修复：`parent` 改用 `tok_dup` 分配（与 `ast_free_node` 既有 `free` 配对，无泄漏）
+  - [x] 修复：`ast_free_node` 补充释放 `class.body` 与 `klass->fields`（该分支此前被 NULL 解引用提前崩溃从未执行，属新暴露的 AST 泄漏）
+  - [x] 回归测试 `test_class_decl_parse`（`class Foo {}` / `class Foo Bar {}` 解析通过，ASan 全绿）
+  - [x] PR #6 (commit `164b80a`，分支 `260910-fix-script-class-decl-crash`) + Issue #7
+- [Low] native 注册上限不一致：`ky_vm_register_native` 先 `native_count++` 再判 `KYX_MAX_REGISTRY`(512)，第 513+ 次注册静默丢弃；`n511(1,2,3)` 调用成功返回 3.0(非垃圾)，`n512` 因槽耗尽查找失败属预期失效
+  - [ ] 待改：注册前判界再递增，消除 `native_count` 与有效槽不一致
+- [Medium] `OP_RETURN` 与算术输出 INT 强制转 FLOAT (vm.c:291-296)：`KYT_INT`/`KYT_BOOL` 返回值一律转 `KYT_FLOAT`，int 类型不保留
+  - [ ] 待评审：是否按需保留 int 语义
+### 验证:
+- [x] ASan 构建 `ctest` 18/18 全绿（含新增回归测试）
+- [x] PoC 复现 (`/tmp/poc_class.c`) 修复前后对比：修复前 SEGV @ 0x0，修复后 ASan 干净
+### 后续要求 (Next Steps):
+- [ ] native 注册判界顺序修正 + 上限语义文档化
+- [ ] `OP_RETURN` int 类型保留方案评审
+- [ ] 排查其余 AST 节点"指针当数组写"同类模式（`new_expr` / `anon_func` / `call.args` 等）
+- [ ] 长驻 VM 累积分配无 GC（字符串/全局名 strdup 手动管理）的回收策略
+- [ ] P5 kyx debugger (step/break/watch) + 脚本 hot reload
+- [ ] P6 2D/3D demo + 真 GPU 环境 Vulkan 后端

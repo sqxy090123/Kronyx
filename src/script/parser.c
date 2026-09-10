@@ -129,6 +129,7 @@ static void ast_free(kyAstNode *n) {
 static kyAstNode *parse_primary(kyParser *p);
 
 static kyAstNode *parse_call(kyParser *p, kyAstNode *callee) {
+    if (!callee) return NULL;
     kyAstNode *n = ast_new(KY_AST_EXPR_CALL, callee->line);
     n->as.call.callee = callee;
     n->as.call.arg_count = 0; n->as.call.args = NULL;
@@ -165,6 +166,7 @@ static kyAstNode *parse_postfix(kyParser *p, kyAstNode *base) {
             base = n;
         } else if (t->kind == KYX_TK_LPAREN) {
             tok_advance(p);
+            if (!base) break;
             base = parse_call(p, base);
         } else if (t->kind == KYX_TK_INC || t->kind == KYX_TK_DEC) {
             tok_advance(p);

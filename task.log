@@ -108,3 +108,21 @@ Implementing viewport, hierarchy, property inspector panels.
 - Call/return mechanism has bugs: function calls return incorrect values
 - Debugging ongoing: bytecode generation is correct but VM execution produces wrong results
 - 93/106 tests passing (88%)
+
+## Security Audit + Fixes (2026-09-10)
+
+### 已完成 (Done)
+| 项 | 详情 |
+|------|------|
+| [High/DoS] class 声明 NULL 解引用崩溃 | parser.c:407-408 `class_decl.parent` 是指针成员却被当数组写，任意 `class` 声明即 SEGV @ 0x0；改用 `tok_dup` + `ast_free_node` 补释放 body/klass->fields；回归测试 `test_class_decl_parse` ASan 全绿。**PR #6** (commit 164b80a) / **Issue #7** |
+| native 注册上限不一致 (Low) | 先 `--` 后判界，第 513+ 次静默丢弃；`n511` 调用实际成功返回 3.0 |
+| `OP_RETURN` INT/BOOL 强转 FLOAT (Medium) | vm.c:291-296，int 类型不保留 |
+| ASan ctest 18/18 全绿 | 含新增回归测试 |
+
+### 后续要求 (Pending)
+- [ ] native 注册判界顺序修正（先判界再递增），消除 `native_count` 与有效槽不一致，并文档化上限语义
+- [ ] 评审 `OP_RETURN` int 类型是否保留
+- [ ] 排查其余 AST 节点"指针当数组写"同类模式（`new_expr` / `anon_func` / `call.args`）
+- [ ] 长驻 VM 无 GC 的累积分配回收策略
+- [ ] P5 kyx debugger（step/break/watch）+ 脚本 hot reload
+- [ ] P6 2D/3D demo + Vulkan 真 GPU 后端

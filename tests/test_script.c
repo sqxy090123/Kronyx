@@ -482,6 +482,8 @@ static void test_bitwise_ops(void) {
     }
 }
 
+static void test_parse_null_safety(void);
+
 static void test_global_vars(void) {
     /* top-level var + read/write from function + compound assign + local mix */
     kyVM *vm = ky_vm_create(NULL);
@@ -515,6 +517,25 @@ static void test_class_decl_parse(void) {
     ky_vm_destroy(vm);
 }
 
+static void test_parse_null_safety(void) {
+    /* Regression: parse_call should not SEGV when callee is NULL
+     * (triggered by malformed ternary expressions like a?(b:c)) */
+    kyVM *vm = ky_vm_create(NULL);
+    ASSERT(vm != NULL, "create VM for parse null safety");
+
+    /* These should return parse errors, not crash */
+    int r = ky_vm_load_string(vm, "a?(b:c)", "null1");
+    ASSERT(r == -1, "malformed ternary returns error not crash");
+
+    r = ky_vm_load_string(vm, "x0?(x1?(x2?x3:x4):x5):x6", "null2");
+    ASSERT(r == -1, "nested malformed ternary returns error not crash");
+
+    r = ky_vm_load_string(vm, "(a?b:c)?d:e", "null3");
+    ASSERT(r == -1, "ternary-as-condition returns error not crash");
+
+    ky_vm_destroy(vm);
+}
+
 int main(void) {
     printf("=== Script (kyx) Test ===\n");
 
@@ -532,7 +553,9 @@ int main(void) {
     test_bitwise_ops();
     test_class_decl_parse();
     test_global_vars();
+    test_parse_null_safety();
 
     printf("\n=== %d tests ran, %d failures ===\n", assertions, failures);
     return failures == 0 ? 0 : 1;
 }
+
