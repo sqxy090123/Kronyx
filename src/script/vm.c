@@ -109,7 +109,12 @@ static int64_t to_int(kyValue v) {
     return (int64_t)d;
 }
 static int val_truthy(kyValue v) {
-    return v.type != KYT_NIL && !(v.type == KYT_BOOL && !v.as.ival);
+    if (v.type == KYT_NIL) return 0;
+    if (v.type == KYT_BOOL) return v.as.ival != 0;
+    if (v.type == KYT_INT) return v.as.ival != 0;
+    if (v.type == KYT_FLOAT) return v.as.fval != 0.0;
+    if (v.type == KYT_STRING) return v.as.sval[0] != '\0';
+    return 1;
 }
 static int val_eq(kyValue a, kyValue b) {
     if (a.type != b.type) return 0;
@@ -487,13 +492,12 @@ int ky_vm_call(kyVM *vm, const char *func_name, kyValue *args, int argc, kyValue
 
 void ky_vm_register_native(kyVM *vm, const char *ns, const char *name, kyNativeFn fn, void *user) {
     if (!vm || !fn) return;
+    if (vm->native_count >= KYX_MAX_REGISTRY) return;
     int id = vm->native_count++;
-    if (id < KYX_MAX_REGISTRY) {
-        vm->natives[id].fn = fn;
-        vm->natives[id].user = user;
-        strncpy(vm->natives[id].ns, ns ? ns : "", sizeof(vm->natives[id].ns) - 1);
-        strncpy(vm->natives[id].name, name ? name : "", sizeof(vm->natives[id].name) - 1);
-    }
+    vm->natives[id].fn = fn;
+    vm->natives[id].user = user;
+    strncpy(vm->natives[id].ns, ns ? ns : "", sizeof(vm->natives[id].ns) - 1);
+    strncpy(vm->natives[id].name, name ? name : "", sizeof(vm->natives[id].name) - 1);
 }
 
 const char *ky_vm_last_error(kyVM *vm) {
@@ -697,7 +701,13 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
         case KY_AST_EXPR_LITERAL: {
             kyToken *t = &node->as.literal.tok;
             if (t->kind == KYX_TK_INT_LIT) {
-                compile_emit(cs, 2, dest, (int)t->as.ival, 0);
+                int64_t ival = t->as.ival;
+                if (ival >= INT32_MIN && ival <= INT32_MAX) {
+                    compile_emit(cs, 2, dest, (int)ival, 0);
+                } else {
+                    int c = compile_add_const(cs, (double)ival);
+                    compile_emit(cs, 4, dest, c, 0);
+                }
             } else if (t->kind == KYX_TK_FLOAT_LIT) {
                 int c = compile_add_const(cs, t->as.fval);
                 compile_emit(cs, 4, dest, c, 0);

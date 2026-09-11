@@ -79,8 +79,12 @@ static void ast_free_node(kyAstNode *n) {
             free(n->as.func_decl.name);
             for (int i = 0; i < n->as.func_decl.param_count; i++) free(n->as.func_decl.params[i]);
             free(n->as.func_decl.params); ast_free(n->as.func_decl.body); free(n->as.func_decl.proto); break;
-        case KY_AST_CLASS_DECL:
-            free(n->as.class_decl.name); free(n->as.class_decl.parent); free(n->as.class_decl.klass); break;
+        case KY_AST_CLASS_DECL: {
+            kyAstClass *k = n->as.class_decl.klass;
+            free(n->as.class_decl.name); free(n->as.class_decl.parent);
+            if (k) { for (int i = 0; i < k->field_count; i++) ast_free(k->fields[i]); free(k->fields); free(k); }
+            ast_free(n->as.class_decl.body); break;
+        }
         case KY_AST_IF_STMT: ast_free(n->as.if_stmt.cond); ast_free(n->as.if_stmt.then_b); ast_free(n->as.if_stmt.else_b); break;
         case KY_AST_WHILE_STMT: ast_free(n->as.while_stmt.cond); ast_free(n->as.while_stmt.body); break;
         case KY_AST_FOR_STMT: ast_free(n->as.for_stmt.init); ast_free(n->as.for_stmt.cond); ast_free(n->as.for_stmt.inc); ast_free(n->as.for_stmt.body); break;
@@ -125,6 +129,7 @@ static void ast_free(kyAstNode *n) {
 static kyAstNode *parse_primary(kyParser *p);
 
 static kyAstNode *parse_call(kyParser *p, kyAstNode *callee) {
+    if (!callee) return NULL;
     kyAstNode *n = ast_new(KY_AST_EXPR_CALL, callee->line);
     n->as.call.callee = callee;
     n->as.call.arg_count = 0; n->as.call.args = NULL;
@@ -161,6 +166,7 @@ static kyAstNode *parse_postfix(kyParser *p, kyAstNode *base) {
             base = n;
         } else if (t->kind == KYX_TK_LPAREN) {
             tok_advance(p);
+            if (!base) break;
             base = parse_call(p, base);
         } else if (t->kind == KYX_TK_INC || t->kind == KYX_TK_DEC) {
             tok_advance(p);
@@ -259,16 +265,22 @@ static kyAstNode *parse_primary(kyParser *p) {
 }
 
 static struct { const char *op; int prec; int right_assoc; } binops[] = {
-    { "==", 1, 0 }, { "!=", 1, 0 },
-    { "<",  2, 0 }, { "<=", 2, 0 }, { ">",  2, 0 }, { ">=", 2, 0 },
-    { "<<", 3, 0 }, { ">>", 3, 0 },
-    { "+",  4, 0 }, { "-",  4, 0 },
-    { "*",  5, 0 }, { "/",  5, 0 }, { "%",  5, 0 },
-    { "&",  6, 0 }, { "^",  7, 0 }, { "|",  8, 0 },
-    { "&&", 9, 0 }, { "||", 10, 0 },
-    { "?",  11, 0 },
-    { "=",  12, 1 }, { "+=", 12, 1 }, { "-=", 12, 1 }, { "*=", 12, 1 }, { "/=", 12, 1 }, { "%=", 12, 1 },
-    { NULL, 0, 0 }
+    { "==",  1, 0 }, { "!=",  1, 0 },           /* 0-1: equality */
+    { "<",   2, 0 }, { "<=",  2, 0 },            /* 2-3: relational */
+    { ">",   2, 0 }, { ">=",  2, 0 },            /* 4-5: relational */
+    { "<<",  3, 0 }, { ">>",  3, 0 },            /* 6-7: shift */
+    { "+",   4, 0 }, { "-",   4, 0 },            /* 8-9: additive */
+    { "*",   5, 0 }, { "/",   5, 0 },            /* 10-11: multiplicative */
+    { "%",   5, 0 },                              /* 12: modulo */
+    { "&",   6, 0 },                              /* 13: bitwise AND */
+    { "^",   7, 0 },                              /* 14: bitwise XOR */
+    { "|",   8, 0 },                              /* 15: bitwise OR */
+    { "&&",  9, 0 }, { "||", 10, 0 },            /* 16-17: logical (left-assoc, C standard) */
+    /* Note: ternary (? :) is NOT implemented; no TK_QUESTION in find_binop */
+    { "=",  12, 1 }, { "+=", 12, 1 },            /* 18-19: assignment */
+    { "-=", 12, 1 }, { "*=", 12, 1 },            /* 21-22: assignment */
+    { "/=", 12, 1 }, { "%=", 12, 1 },            /* 23-24: assignment */
+    { NULL,  0, 0 }
 };
 
 static int find_binop(kyToken *t) {
@@ -287,18 +299,17 @@ static int find_binop(kyToken *t) {
         case KYX_TK_STAR:     return 10; /* * */
         case KYX_TK_SLASH:    return 11; /* / */
         case KYX_TK_MOD:      return 12; /* % */
-        case KYX_TK_AND:      return 13; /* && */
-        case KYX_TK_OR:       return 14; /* || */
-        case KYX_TK_BNOT:     return 15; /* ~ */
-        case KYX_TK_BAND:     return 16; /* & */
-        case KYX_TK_ASSIGN:   return 17; /* = */
-        case KYX_TK_PLUSEQ:   return 17; /* += */
-        case KYX_TK_MINUSEQ:  return 18; /* -= */
-        case KYX_TK_STAREQ:   return 19; /* *= */
-        case KYX_TK_DIVEQ:    return 20; /* /= */
-        case KYX_TK_MODEQ:    return 21; /* %= */
-        case KYX_TK_BOR:      return 22; /* | */
-        case KYX_TK_BXOR:     return 23; /* ^ */
+        case KYX_TK_BAND:     return 13; /* & */
+        case KYX_TK_BXOR:     return 14; /* ^ */
+        case KYX_TK_BOR:      return 15; /* | */
+        case KYX_TK_AND:      return 16; /* && */
+        case KYX_TK_OR:       return 17; /* || */
+        case KYX_TK_ASSIGN:   return 18; /* = */
+        case KYX_TK_PLUSEQ:   return 19; /* += */
+        case KYX_TK_MINUSEQ:  return 20; /* -= */
+        case KYX_TK_STAREQ:   return 21; /* *= */
+        case KYX_TK_DIVEQ:    return 22; /* /= */
+        case KYX_TK_MODEQ:    return 23; /* %= */
         default:              return -1;
     }
 }
@@ -317,9 +328,6 @@ static kyAstNode *parse_expression(kyParser *p, int min_prec) {
         strncpy(n->as.binop.op, t->start, t->len < sizeof(n->as.binop.op) - 1 ? t->len : sizeof(n->as.binop.op) - 1);
         n->as.binop.left = left;
         int next_min_prec = right_assoc ? prec : prec + 1;
-        if (op_idx >= 16) {
-            next_min_prec = 0;
-        }
         n->as.binop.right = parse_expression(p, next_min_prec);
         if (!n->as.binop.right) { free(n); return left; }
         left = n;
@@ -399,13 +407,10 @@ static kyAstNode *parse_statement(kyParser *p) {
         if (!cname) return NULL;
         kyAstNode *n = ast_new(KY_AST_CLASS_DECL, t->line);
         n->as.class_decl.name = tok_dup(cname);
-        n->as.class_decl.parent[0] = '\0';
+        n->as.class_decl.parent = NULL;
         n->as.class_decl.klass = (kyAstClass *)calloc(1, sizeof(kyAstClass));
         if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_IDENT) {
-            kyToken *pt = tok_current(p);
-            size_t pl = pt->len;
-            strncpy(n->as.class_decl.parent, pt->start, pl);
-            n->as.class_decl.parent[pl] = '\0';
+            n->as.class_decl.parent = tok_dup(tok_current(p));
             tok_advance(p);
         }
         n->as.class_decl.body = parse_block(p);
@@ -511,12 +516,17 @@ static kyAstNode *parse_statement(kyParser *p) {
         tok_consume(p, KYX_TK_SEMI, "expected ';'");
         return n;
     }
-    kyAstNode *expr = parse_expression(p, 0);
-    if (!expr) return NULL;
-    if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_SEMI) tok_advance(p);
-    kyAstNode *n = ast_new(KY_AST_EXPR_STMT, t->line);
-    n->as.expr_stmt.expr = expr;
-    return n;
+     if (t->kind == KYX_TK_LBRACE) {
+         kyAstNode *block = parse_block(p);
+         if (!block) return NULL;
+         return block;
+     }
+     kyAstNode *expr = parse_expression(p, 0);
+     if (!expr) return NULL;
+     if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_SEMI) tok_advance(p);
+     kyAstNode *n = ast_new(KY_AST_EXPR_STMT, t->line);
+     n->as.expr_stmt.expr = expr;
+     return n;
 }
 
 kyParser *kyx_parser_create(void *stream) {

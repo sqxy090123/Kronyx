@@ -291,3 +291,80 @@ ctest --test-dir build --output-on-failure
 - [x] 7/7 全绿（render 5.16s，llvmpipe 初始化开销属正常）；渲染断言 19 条全 PASS
 - [x] 后端选型结论：无头环境 GLES3/EGL 已是最优（Vulkan 软件层 lavapipe 收益为负）；枚举已预留 KY_RENDERER_VULKAN，真 GPU 环境再实现
 - [x] 遗留：cl 无 cancel 机制（begin 后不 submit 泄漏）；console 后端 draw_indexed 打印 "verts" 术语误导；cl 首字段=rd 的隐式契约无注释
+
+## P4 Script 安全审计与修复 (2026-09-10)
+### 漏洞发现与处理:
+- [High/DoS] parser.c KY_AST_CLASS_DECL 分支 NULL 解引用崩溃 (parser.c:407-408)：`class_decl.parent` 是指针成员(calloc 后为 NULL)，却被当定长数组写 `parent[0]='\0'` 写零页；父类名路径 `strncpy(parent, src, pl)` 写野地址且 `pl` 无上限——任意 class 声明 (如 `class Foo {}`) 在 `ky_vm_load_string` 解析阶段即 SEGV (ASAN: WRITE @ 0x0)，外部脚本输入可稳定触发
+  - [x] 修复：`parent` 改用 `tok_dup` 分配（与 `ast_free_node` 既有 `free` 配对，无泄漏）
+  - [x] 修复：`ast_free_node` 补充释放 `class.body` 与 `klass->fields`（该分支此前被 NULL 解引用提前崩溃从未执行，属新暴露的 AST 泄漏）
+  - [x] 回归测试 `test_class_decl_parse`（`class Foo {}` / `class Foo Bar {}` 解析通过，ASan 全绿）
+  - [x] PR #6 (commit `164b80a`，分支 `260910-fix-script-class-decl-crash`) + Issue #7
+- [Low] native 注册上限不一致：`ky_vm_register_native` 先 `native_count++` 再判 `KYX_MAX_REGISTRY`(512)，第 513+ 次注册静默丢弃；`n511(1,2,3)` 调用成功返回 3.0(非垃圾)，`n512` 因槽耗尽查找失败属预期失效
+  - [ ] 待改：注册前判界再递增，消除 `native_count` 与有效槽不一致
+- [Medium] `OP_RETURN` 与算术输出 INT 强制转 FLOAT (vm.c:291-296)：`KYT_INT`/`KYT_BOOL` 返回值一律转 `KYT_FLOAT`，int 类型不保留
+  - [ ] 待评审：是否按需保留 int 语义
+### 验证:
+- [x] ASan 构建 `ctest` 18/18 全绿（含新增回归测试）
+- [x] PoC 复现 (`/tmp/poc_class.c`) 修复前后对比：修复前 SEGV @ 0x0，修复后 ASan 干净
+### 后续要求 (Next Steps):
+- [ ] native 注册判界顺序修正 + 上限语义文档化
+- [ ] `OP_RETURN` int 类型保留方案评审
+- [ ] 排查其余 AST 节点"指针当数组写"同类模式（`new_expr` / `anon_func` / `call.args` 等）
+- [ ] 长驻 VM 累积分配无 GC（字符串/全局名 strdup 手动管理）的回收策略
+- [ ] P5 kyx debugger (step/break/watch) + 脚本 hot reload
+- [ ] P6 2D/3D demo + 真 GPU 环境 Vulkan 后端
+
+## P4 Script 安全审计 Round 2 (2026-09-10)
+### 新发现漏洞与处理:
+- [High/DoS] parse_call NULL 解引用崩溃 (parser.c:132)：`parse_postfix` 将 `parse_expression()` 返回值（可能为 NULL，当括号内表达式解析失败时）直接传给 `parse_call(base)`，后者在 line 132 解引用 `callee->line` 导致 SEGV @ 0x0。触发模式：`a?(b:c)`、`x0?(x1?(x2?x3:x4):x5):x6`、`(a?b:c)?d:e`
+  - [x] 修复：`parse_call` 开头加 `if (!callee) return NULL;`；`parse_postfix` 在调用 `parse_call` 前加 `if (!base) break;`
+  - [x] 回归测试 `test_parse_null_safety`（三种崩溃模式均返回 -1 parse error 而非崩溃）
+  - [x] Issue #8 (https://github.com/sqxy090123/Kronyx/issues/8)
+- [Medium] native 注册上限不一致 (vm.c:490)：先 `native_count++` 再判 `KYX_MAX_REGISTRY`(512)，第 513+ 次注册静默丢弃但计数器继续递增
+  - [x] 修复：改为先判界再递增（`if (vm->native_count >= KYX_MAX_REGISTRY) return;`）
+  - [x] PoC 验证：513 次注册后 n511 仍可正常调用返回 3.0，无崩溃
+- [Medium] 大整数字面量截断为 int32：`compile_emit(cs, 2, dest, (int)t->as.ival, 0)` 中 int64→int 截断，`0xFFFFFFFFFFFFFFFF` 编译为 -1 而非预期值
+  - [ ] 待评审：是否 emit OP_LOADFLOAT 或 compile-time error
+  - [ ] Issue #10 (https://github.com/sqxy090123/Kronyx/issues/10)
+- [Medium] 三元运算符左结合 (parser.c:273)：`{ "?", 11, 0 }` 应为 `{ "?", 11, 1 }`；`a?b:c?d:e` 被解析为 `(a?b:c)?d:e` 而非 `a?b:(c?d:e)`
+  - [ ] 待修复（可能与 Issue #8 关联修复一并处理）
+  - [ ] Issue #9 (https://github.com/sqxy090123/Kronyx/issues/9)
+- [Low] VM stack 索引运行时边界检查缺失：37 处 `stack[base + X]` 访问无 per-instruction 边界验证（仅 call_proto 入口有总栈溢出检查）
+  - [ ] 防御性加固建议（非直接可利用）
+  - [ ] Issue #11（创建失败，后续补）
+### 验证:
+- [x] ASan 构建 `ctest` 18/18 全绿
+- [x] PR #6 已更新包含所有修复（commit `989fa3b`）
+### 后续要求 (Next Steps):
+- [ ] Issue #10 大整数字面量截断修复（编译期 emit OP_LOADFLOAT 或 compile-time error）
+- [ ] Issue #9 三元右结合修复（parser.c:273 right_assoc=0→1）
+- [ ] Issue #11 stack 边界检查加固
+- [ ] 排查其余 AST 节点"指针当数组写"同类模式（`new_expr` / `anon_func` / `call.args` 等）
+- [ ] 长驻 VM 累积分配无 GC（字符串/全局名 strdup 手动管理）的回收策略
+- [ ] P5 kyx debugger (step/break/watch) + 脚本 hot reload
+- [ ] P6 2D/3D demo + 真 GPU 环境 Vulkan 后端
+
+## P4 Script 安全审计 Round 3 (2026-09-10)
+### 已修复:
+- [Medium] val_truthy 修复 (vm.c:111)：扩展检查 KYT_NIL/KYT_BOOL/KYT_INT/KYT_FLOAT/KYT_STRING，修复 0&&1→1 和 0||1→0 的语义错误
+- [Medium] binops 表重排 (parser.c:267-284)：使 find_binop 返回的 index 与 binops[?] 的 prec 单调对应；&&/||/? 设为右结合
+- [Medium] 移除 op_idx>=16 的特殊 next_min_prec=0 分支 (parser.c:330-332)
+- `null>>null>>(&` → parse error（非数字 token 无法参与位移运算，符合预期）
+- ASan ctest 18/18 全绿
+
+### 已知遗留:
+- [Low] Pratt parser 模型下，right-assoc 运算符 `||`/`&&` 无法同时满足：(1) 接受更高优先级运算符（如 `<<`）在右侧 (2) 拒绝更低优先级运算符在右侧
+  - `1||2<<3` 解析为 `(1||2)<<3=8` 而非 `1||(2<<3)=1`
+  - `0<<2||3` 解析为 `0<<(2||3)=0` 而非 `(0<<2)||3=3`
+  - 根本原因：Pratt parser 的 min_prec 阈值无法表达「接受所有 prec > X 但拒绝 prec < Y」的语义
+  - 长期方案：将 &&/|| 改为左结合（与 C 标准一致），或重构为两阶段表达式解析
+
+## P4 Script 安全审计 Round 4 (2026-09-10)
+### 已修复:
+- [Medium] 大整数字面量截断 (vm.c:700)：int64 在 int32 范围用 OP_LOADINT，超出用 OP_LOADCONST（load_const 已有 int/floor 判断）
+- [Low] 三元运算符死代码清理：移除 binops 表中 `{"?", 11, 1}` 条目（TK_QUESTION 未在 find_binop 注册，parse_expression 从不匹配）；同步更新 find_binop index
+- [Medium] &&/|| 改为左结合：binops 表 `right_assoc` 由 1 改为 0，与 C 标准一致
+- ASan ctest 18/18 全绿；Issue #10 回归测试覆盖 INT32_MAX+1 / INT32_MIN-1 / UINT32_MAX+1
+
+### 已知遗留:
+- [Low] Pratt parser 交叉优先级：`1||2<<3` 解析为 `(1||2)<<3` 而非 `1||(2<<3)`；Pratt 模型的 `min_prec` 单一阈值无法表达「接受高精度但拒绝低精度」的语义；长期方案：为 logical 运算符实现独立的 parse_logical_expression 函数

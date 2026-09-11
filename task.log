@@ -108,3 +108,98 @@ Implementing viewport, hierarchy, property inspector panels.
 - Call/return mechanism has bugs: function calls return incorrect values
 - Debugging ongoing: bytecode generation is correct but VM execution produces wrong results
 - 93/106 tests passing (88%)
+
+## Security Audit + Fixes (2026-09-10)
+
+### 已完成 (Done)
+| 项 | 详情 |
+|------|------|
+| [High/DoS] class 声明 NULL 解引用崩溃 | parser.c:407-408 `class_decl.parent` 是指针成员却被当数组写，任意 `class` 声明即 SEGV @ 0x0；改用 `tok_dup` + `ast_free_node` 补释放 body/klass->fields；回归测试 `test_class_decl_parse` ASan 全绿。**PR #6** (commit 164b80a) / **Issue #7** |
+| native 注册上限不一致 (Low) | 先 `--` 后判界，第 513+ 次静默丢弃；`n511` 调用实际成功返回 3.0 |
+| `OP_RETURN` INT/BOOL 强转 FLOAT (Medium) | vm.c:291-296，int 类型不保留 |
+| ASan ctest 18/18 全绿 | 含新增回归测试 |
+
+### 后续要求 (Pending)
+- [ ] native 注册判界顺序修正（先判界再递增），消除 `native_count` 与有效槽不一致，并文档化上限语义
+- [ ] 评审 `OP_RETURN` int 类型是否保留
+- [ ] 排查其余 AST 节点"指针当数组写"同类模式（`new_expr` / `anon_func` / `call.args`）
+- [ ] 长驻 VM 无 GC 的累积分配回收策略
+- [ ] P5 kyx debugger（step/break/watch）+ 脚本 hot reload
+- [ ] P6 2D/3D demo + Vulkan 真 GPU 后端
+
+## Security Audit Round 2 (2026-09-10)
+
+### 已完成 (Done)
+| 项 | 详情 |
+|------|------|
+| [High/DoS] parse_call NULL 解引用崩溃 | parser.c:132，`parse_postfix` 传 NULL base 给 `parse_call` 导致 SEGV；触发：`a?(b:c)`。修复：双重 null check；回归测试 `test_parse_null_safety`。**Issue #8** / **PR #6** (commit 989fa3b) |
+| [Medium] native 注册上限不一致 | vm.c:490 先递增后判界；修复：先判界再递增 |
+| [Medium] 大整数字面量截断 | int64→int 截断，`0xFFFFFFFFFFFFFFFF` 变为 -1；Issue #10 |
+| [Medium] 三元运算符左结合 | parser.c:273 right_assoc=0 应为 1；Issue #9 |
+| [Low] stack 索引缺运行时边界检查 | 37 处 `stack[base+X]` 无 per-op 检查；Issue #11 |
+| ASan ctest 18/18 全绿 | 含新增回归测试 |
+
+### 后续要求 (Pending)
+- [ ] Issue #10 大整数字面量截断修复（OP_LOADFLOAT 或编译期错误）
+- [ ] Issue #9 三元右结合修复（right_assoc=0→1）
+- [ ] Issue #11 stack 边界检查加固
+- [ ] 排查其余 AST 节点"指针当数组写"同类模式
+- [ ] 长驻 VM 无 GC 的累积分配回收策略
+- [ ] P5 kyx debugger + hot reload
+- [ ] P6 2D/3D demo + Vulkan 真 GPU 后端
+
+### Round 3: val_truthy + binops 优先级修复 (2026-09-10)
+| 项 | 详情 |
+|------|------|
+| [Medium] val_truthy 不处理 FLOAT/INT 类型的 0 | vm.c:111，所有整数字面量经 OP_LOADCONST 加载为 KYT_FLOAT，0.0 被 val_truthy 判为真；导致 0&&1→1、0||1→0。修复：扩展 val_truthy 检查所有类型（NIL/BOOL/INT/FLOAT/STRING） |
+| [Medium] binops 表 index 与 prec 不对应 | find_binop 返回的 index 与 binops 表的 prec 值不单调；`1&&2<<3` 被解析为 `(1&&2)<<3=16` 而非 `1&&(2<<3)`。修复：重新排序 binops 表使 prec 随 index 单调递增；&&和||设为右结合 |
+| `null>>null>>(&` → parse error | 非数字 token 无法参与位运算，parse error 是预期行为 |
+| ASan ctest 18/18 全绿 | 含新增回归测试 |
+
+### 已知遗留问题
+- [Low] `1||2<<3` 解析为 `(1||2)<<3=8` 而非 `1||(2<<3)=1`；Pratt parser 模型下 right-assoc 运算符无法同时支持「接受更高优先级运算符」和「拒绝更低优先级运算符」
+- [Low] `0<<2||3` 解析为 `0<<(2||3)=0` 而非 `(0<<2)||3=3`，同上根因
+- 建议：将 && 和 || 改为左结合（与 C 标准一致），或重构表达式解析器支持二元运算符的不同右侧阈值
+
+### Round 4: 历史遗留修复 (2026-09-10)
+| 项 | 详情 |
+|------|------|
+| [Medium] 大整数字面量截断修复 | vm.c:700，int64→int32 截断（`2147483648` 变为 `2147483647`）；修复：int64 在 int32 范围内用 OP_LOADINT，超出范围用 OP_LOADCONST。9/9 全绿 |
+| [Low] 三元运算符死代码清理 | binops 表 `{ "?", 11, 1 }` 条目移除（TK_QUESTION 未在 find_binop 中注册，三元运算符未实现）；同时更新 find_binop index 偏移 |
+| [Medium] && || 改为左结合 | binops 表中 `&&`(9)/`||`(10) 由 right-assoc 改为 left-assoc，与 C 标准一致 |
+| ASan ctest 18/18 全绿 | 含大整数回归测试 |
+
+### 已知遗留问题
+- [Low] Pratt parser 模型下 `1\|\|2<<3` 解析为 `(1\|\|2)<<3` 而非 `1\|\|(2<<3)`；根源：right-assoc 运算符的 `next_min_prec = prec` 允许低优先级运算符进入右子树；修复需引入双阈值解析器或特殊处理 logical 运算符
+
+### 语法边界测试 (2026-09-10)
+| 表达式 | 结果 | 说明 |
+|--------|------|------|
+| `1.b0` | parse error | INT_LIT + DOT + IDENT，无运算符分隔 |
+| `1.0+2.0` | 3.0 | 正常浮点加法 |
+| `b.1` | parse error | FIELD access 要求点后为 IDENT |
+| `null+1` | 1.0 | null→0.0，算术隐式转换 |
+| `null.1` | parse error | NIL 类型不支持 field access |
+| `1.null` | parse error | INT_LIT + DOT + IDENT，无运算符分隔 |
+| `null:null` | parse error | 三元运算符 `?:` 未实现 |
+| `1.0e2` | parse error | 不支持科学计数法 |
+| `0xFF` | 255.0 | 十六进制字面量支持 |
+| `1_000` | parse error | 不支持数字下划线分隔符 |
+| `null==0` | false | val_eq 严格类型比较（NIL≠FLOAT） |
+
+### 除零与 print 边界测试 (2026-09-10)
+| 表达式 | 结果 | 说明 |
+|--------|------|------|
+| `1/0` | **0.0** | 除零静默返回 0，未产生 NaN/Infinity/错误（潜在 issue） |
+| `0/0` | **0.0** | 同上 |
+| `-1/0` | **0.0** | 同上 |
+| `5%0` | **0.0** | 模零静默返回 0 |
+| `std.print('*@(@*#9!")` | 正常打印 | 特殊字符在字符串字面量中合法（转义 `\` 需正确处理） |
+
+### 字符串字面量语法发现 (2026-09-10)
+| 发现 | 详情 |
+|------|------|
+| 字符串分隔符为双引号 `"` | script.c:200 `while (peek(lx) != '"')`；单引号 `'` 不被识别为字符串开始 |
+| `std.print('hello')` | lex error（`'` 被当作标识符开头） |
+| `std.print("*@(@*#9!")` | 正常解析和打印 |
+| 转义支持 | `\` 后跳过一个字符（`\\`、`\"` 等） |
