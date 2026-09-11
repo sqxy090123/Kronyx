@@ -343,3 +343,28 @@ ctest --test-dir build --output-on-failure
 - [ ] 长驻 VM 累积分配无 GC（字符串/全局名 strdup 手动管理）的回收策略
 - [ ] P5 kyx debugger (step/break/watch) + 脚本 hot reload
 - [ ] P6 2D/3D demo + 真 GPU 环境 Vulkan 后端
+
+## P4 Script 安全审计 Round 3 (2026-09-10)
+### 已修复:
+- [Medium] val_truthy 修复 (vm.c:111)：扩展检查 KYT_NIL/KYT_BOOL/KYT_INT/KYT_FLOAT/KYT_STRING，修复 0&&1→1 和 0||1→0 的语义错误
+- [Medium] binops 表重排 (parser.c:267-284)：使 find_binop 返回的 index 与 binops[?] 的 prec 单调对应；&&/||/? 设为右结合
+- [Medium] 移除 op_idx>=16 的特殊 next_min_prec=0 分支 (parser.c:330-332)
+- `null>>null>>(&` → parse error（非数字 token 无法参与位移运算，符合预期）
+- ASan ctest 18/18 全绿
+
+### 已知遗留:
+- [Low] Pratt parser 模型下，right-assoc 运算符 `||`/`&&` 无法同时满足：(1) 接受更高优先级运算符（如 `<<`）在右侧 (2) 拒绝更低优先级运算符在右侧
+  - `1||2<<3` 解析为 `(1||2)<<3=8` 而非 `1||(2<<3)=1`
+  - `0<<2||3` 解析为 `0<<(2||3)=0` 而非 `(0<<2)||3=3`
+  - 根本原因：Pratt parser 的 min_prec 阈值无法表达「接受所有 prec > X 但拒绝 prec < Y」的语义
+  - 长期方案：将 &&/|| 改为左结合（与 C 标准一致），或重构为两阶段表达式解析
+
+## P4 Script 安全审计 Round 4 (2026-09-10)
+### 已修复:
+- [Medium] 大整数字面量截断 (vm.c:700)：int64 在 int32 范围用 OP_LOADINT，超出用 OP_LOADCONST（load_const 已有 int/floor 判断）
+- [Low] 三元运算符死代码清理：移除 binops 表中 `{"?", 11, 1}` 条目（TK_QUESTION 未在 find_binop 注册，parse_expression 从不匹配）；同步更新 find_binop index
+- [Medium] &&/|| 改为左结合：binops 表 `right_assoc` 由 1 改为 0，与 C 标准一致
+- ASan ctest 18/18 全绿；Issue #10 回归测试覆盖 INT32_MAX+1 / INT32_MIN-1 / UINT32_MAX+1
+
+### 已知遗留:
+- [Low] Pratt parser 交叉优先级：`1||2<<3` 解析为 `(1||2)<<3` 而非 `1||(2<<3)`；Pratt 模型的 `min_prec` 单一阈值无法表达「接受高精度但拒绝低精度」的语义；长期方案：为 logical 运算符实现独立的 parse_logical_expression 函数

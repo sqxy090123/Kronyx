@@ -109,7 +109,12 @@ static int64_t to_int(kyValue v) {
     return (int64_t)d;
 }
 static int val_truthy(kyValue v) {
-    return v.type != KYT_NIL && !(v.type == KYT_BOOL && !v.as.ival);
+    if (v.type == KYT_NIL) return 0;
+    if (v.type == KYT_BOOL) return v.as.ival != 0;
+    if (v.type == KYT_INT) return v.as.ival != 0;
+    if (v.type == KYT_FLOAT) return v.as.fval != 0.0;
+    if (v.type == KYT_STRING) return v.as.sval[0] != '\0';
+    return 1;
 }
 static int val_eq(kyValue a, kyValue b) {
     if (a.type != b.type) return 0;
@@ -696,7 +701,13 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
         case KY_AST_EXPR_LITERAL: {
             kyToken *t = &node->as.literal.tok;
             if (t->kind == KYX_TK_INT_LIT) {
-                compile_emit(cs, 2, dest, (int)t->as.ival, 0);
+                int64_t ival = t->as.ival;
+                if (ival >= INT32_MIN && ival <= INT32_MAX) {
+                    compile_emit(cs, 2, dest, (int)ival, 0);
+                } else {
+                    int c = compile_add_const(cs, (double)ival);
+                    compile_emit(cs, 4, dest, c, 0);
+                }
             } else if (t->kind == KYX_TK_FLOAT_LIT) {
                 int c = compile_add_const(cs, t->as.fval);
                 compile_emit(cs, 4, dest, c, 0);

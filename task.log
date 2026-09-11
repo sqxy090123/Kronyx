@@ -147,3 +147,27 @@ Implementing viewport, hierarchy, property inspector panels.
 - [ ] 长驻 VM 无 GC 的累积分配回收策略
 - [ ] P5 kyx debugger + hot reload
 - [ ] P6 2D/3D demo + Vulkan 真 GPU 后端
+
+### Round 3: val_truthy + binops 优先级修复 (2026-09-10)
+| 项 | 详情 |
+|------|------|
+| [Medium] val_truthy 不处理 FLOAT/INT 类型的 0 | vm.c:111，所有整数字面量经 OP_LOADCONST 加载为 KYT_FLOAT，0.0 被 val_truthy 判为真；导致 0&&1→1、0||1→0。修复：扩展 val_truthy 检查所有类型（NIL/BOOL/INT/FLOAT/STRING） |
+| [Medium] binops 表 index 与 prec 不对应 | find_binop 返回的 index 与 binops 表的 prec 值不单调；`1&&2<<3` 被解析为 `(1&&2)<<3=16` 而非 `1&&(2<<3)`。修复：重新排序 binops 表使 prec 随 index 单调递增；&&和||设为右结合 |
+| `null>>null>>(&` → parse error | 非数字 token 无法参与位运算，parse error 是预期行为 |
+| ASan ctest 18/18 全绿 | 含新增回归测试 |
+
+### 已知遗留问题
+- [Low] `1||2<<3` 解析为 `(1||2)<<3=8` 而非 `1||(2<<3)=1`；Pratt parser 模型下 right-assoc 运算符无法同时支持「接受更高优先级运算符」和「拒绝更低优先级运算符」
+- [Low] `0<<2||3` 解析为 `0<<(2||3)=0` 而非 `(0<<2)||3=3`，同上根因
+- 建议：将 && 和 || 改为左结合（与 C 标准一致），或重构表达式解析器支持二元运算符的不同右侧阈值
+
+### Round 4: 历史遗留修复 (2026-09-10)
+| 项 | 详情 |
+|------|------|
+| [Medium] 大整数字面量截断修复 | vm.c:700，int64→int32 截断（`2147483648` 变为 `2147483647`）；修复：int64 在 int32 范围内用 OP_LOADINT，超出范围用 OP_LOADCONST。9/9 全绿 |
+| [Low] 三元运算符死代码清理 | binops 表 `{ "?", 11, 1 }` 条目移除（TK_QUESTION 未在 find_binop 中注册，三元运算符未实现）；同时更新 find_binop index 偏移 |
+| [Medium] && || 改为左结合 | binops 表中 `&&`(9)/`||`(10) 由 right-assoc 改为 left-assoc，与 C 标准一致 |
+| ASan ctest 18/18 全绿 | 含大整数回归测试 |
+
+### 已知遗留问题
+- [Low] Pratt parser 模型下 `1\|\|2<<3` 解析为 `(1\|\|2)<<3` 而非 `1\|\|(2<<3)`；根源：right-assoc 运算符的 `next_min_prec = prec` 允许低优先级运算符进入右子树；修复需引入双阈值解析器或特殊处理 logical 运算符
