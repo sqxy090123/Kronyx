@@ -171,3 +171,18 @@ Implementing viewport, hierarchy, property inspector panels.
 
 ### 已知遗留问题
 - [Low] Pratt parser 模型下 `1\|\|2<<3` 解析为 `(1\|\|2)<<3` 而非 `1\|\|(2<<3)`；根源：right-assoc 运算符的 `next_min_prec = prec` 允许低优先级运算符进入右子树；修复需引入双阈值解析器或特殊处理 logical 运算符
+
+### 语法边界测试 (2026-09-10)
+| 表达式 | 结果 | 说明 |
+|--------|------|------|
+| `1.b0` | parse error | INT_LIT + DOT + IDENT，无运算符分隔 |
+| `1.0+2.0` | 3.0 | 正常浮点加法 |
+| `b.1` | parse error | FIELD access 要求点后为 IDENT |
+| `null+1` | 1.0 | null→0.0，算术隐式转换 |
+| `null.1` | parse error | NIL 类型不支持 field access |
+| `1.null` | parse error | INT_LIT + DOT + IDENT，无运算符分隔 |
+| `null:null` | parse error | 三元运算符 `?:` 未实现 |
+| `1.0e2` | parse error | 不支持科学计数法 |
+| `0xFF` | 255.0 | 十六进制字面量支持 |
+| `1_000` | parse error | 不支持数字下划线分隔符 |
+| `null==0` | false | val_eq 严格类型比较（NIL≠FLOAT） |
