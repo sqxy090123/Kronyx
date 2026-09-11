@@ -735,79 +735,65 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
             break;
         }
         case KY_AST_EXPR_BINOP: {
-            const char *op = node->as.binop.op;
-            int is_assign = strcmp(op, "=") == 0 || strcmp(op, "+=") == 0 ||
-                            strcmp(op, "-=") == 0 || strcmp(op, "*=") == 0 ||
-                            strcmp(op, "/=") == 0;
-            if (is_assign && node->as.binop.left &&
-                node->as.binop.left->kind == KY_AST_EXPR_IDENT) {
-                const char *name = node->as.binop.left->as.ident.name;
-                int local = compile_find_local(cs, name);
-                if (local >= 0) {
-                    if (op[1] == '\0') {
-                        compile_expression(cs, node->as.binop.right, local);
-                    } else {
-                        compile_expression(cs, node->as.binop.right, dest + 1);
-                        int oc = op[0] == '+' ? 6 : op[0] == '-' ? 7 : op[0] == '*' ? 8 : 9;
-                        compile_emit(cs, oc, local, local, dest + 1);
+            int tok = node->as.binop.op_kind;
+            /* Handle assignments (simple and compound) */
+            if (tok == KYX_TK_ASSIGN || tok == KYX_TK_PLUSEQ || tok == KYX_TK_MINUSEQ ||
+                tok == KYX_TK_STAREQ || tok == KYX_TK_DIVEQ || tok == KYX_TK_MODEQ) {
+                if (node->as.binop.left && node->as.binop.left->kind == KY_AST_EXPR_IDENT) {
+                    const char *name = node->as.binop.left->as.ident.name;
+                    int local = compile_find_local(cs, name);
+                    if (local >= 0) {
+                        if (tok == KYX_TK_ASSIGN) {
+                            compile_expression(cs, node->as.binop.right, local);
+                        } else {
+                            compile_expression(cs, node->as.binop.right, dest + 1);
+                            int oc = tok == KYX_TK_PLUSEQ ? 6 : tok == KYX_TK_MINUSEQ ? 7 :
+                                     tok == KYX_TK_STAREQ ? 8 : tok == KYX_TK_DIVEQ ? 9 : 10;
+                            compile_emit(cs, oc, local, local, dest + 1);
+                        }
+                        break;
                     }
+                    int name_idx = compile_add_string(cs, name);
+                    int tmp = cs->local_count + 1;
+                    if (tok == KYX_TK_ASSIGN) {
+                        compile_expression(cs, node->as.binop.right, tmp);
+                    } else {
+                        compile_emit(cs, 32, tmp, name_idx, 0);
+                        compile_expression(cs, node->as.binop.right, tmp + 1);
+                        int oc = tok == KYX_TK_PLUSEQ ? 6 : tok == KYX_TK_MINUSEQ ? 7 :
+                                 tok == KYX_TK_STAREQ ? 8 : tok == KYX_TK_DIVEQ ? 9 : 10;
+                        compile_emit(cs, oc, tmp, tmp, tmp + 1);
+                    }
+                    compile_emit(cs, 33, tmp, name_idx, 0);
                     break;
                 }
-                /* assignment to a global variable */
-                int name_idx = compile_add_string(cs, name);
-                int tmp = cs->local_count + 1;
-                if (op[1] == '\0') {
-                    compile_expression(cs, node->as.binop.right, tmp);
-                } else {
-                    compile_emit(cs, 32, tmp, name_idx, 0);
-                    compile_expression(cs, node->as.binop.right, tmp + 1);
-                    int oc = op[0] == '+' ? 6 : op[0] == '-' ? 7 : op[0] == '*' ? 8 : 9;
-                    compile_emit(cs, oc, tmp, tmp, tmp + 1);
-                }
-                compile_emit(cs, 33, tmp, name_idx, 0);
-                break;
             }
             int lhs = dest;
             compile_expression(cs, node->as.binop.left, lhs);
             int rhs = (lhs == dest) ? (dest + 1) : dest;
             compile_expression(cs, node->as.binop.right, rhs);
-            if (strcmp(node->as.binop.op, "+") == 0) {
-                compile_emit(cs, 6, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, "-") == 0) {
-                compile_emit(cs, 7, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, "*") == 0) {
-                compile_emit(cs, 8, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, "/") == 0) {
-                compile_emit(cs, 9, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, "%") == 0) {
-                compile_emit(cs, 10, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, "==") == 0) {
-                compile_emit(cs, 14, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, "!=") == 0) {
-                compile_emit(cs, 15, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, "<") == 0) {
-                compile_emit(cs, 16, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, "<=") == 0) {
-                compile_emit(cs, 17, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, ">") == 0) {
-                compile_emit(cs, 18, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, ">=") == 0) {
-                compile_emit(cs, 19, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, "&&") == 0) {
-                compile_emit(cs, 20, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, "||") == 0) {
-                compile_emit(cs, 21, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, "&") == 0) {
-                compile_emit(cs, 22, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, "|") == 0) {
-                compile_emit(cs, 23, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, "^") == 0) {
-                compile_emit(cs, 24, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, "<<") == 0) {
-                compile_emit(cs, 25, dest, lhs, rhs);
-            } else if (strcmp(node->as.binop.op, ">>") == 0) {
-                compile_emit(cs, 26, dest, lhs, rhs);
+            int opcode = -1;
+            switch (tok) {
+                case KYX_TK_PLUS:      opcode = 6;  break;
+                case KYX_TK_MINUS:     opcode = 7;  break;
+                case KYX_TK_STAR:      opcode = 8;  break;
+                case KYX_TK_SLASH:     opcode = 9;  break;
+                case KYX_TK_MOD:       opcode = 10; break;
+                case KYX_TK_EQ:        opcode = 14; break;
+                case KYX_TK_NEQ:       opcode = 15; break;
+                case KYX_TK_LT:        opcode = 16; break;
+                case KYX_TK_LE:        opcode = 17; break;
+                case KYX_TK_GT:        opcode = 18; break;
+                case KYX_TK_GE:        opcode = 19; break;
+                case KYX_TK_AND:       opcode = 20; break;
+                case KYX_TK_OR:        opcode = 21; break;
+                case KYX_TK_BAND:      opcode = 22; break;
+                case KYX_TK_BOR:       opcode = 23; break;
+                case KYX_TK_BXOR:      opcode = 24; break;
+                case KYX_TK_SHL:       opcode = 25; break;
+                case KYX_TK_SHR:       opcode = 26; break;
             }
+            if (opcode >= 0) compile_emit(cs, opcode, dest, lhs, rhs);
             break;
         }
         case KY_AST_EXPR_UNOP: {

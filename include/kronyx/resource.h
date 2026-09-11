@@ -44,7 +44,6 @@ typedef struct kyResource {
 typedef struct kyResourceManager {
     kyAllocator alloc;
     kyHashMap resources;
-    kyArray owned_keys;
 } kyResourceManager;
 
 KY_API kyResourceManager *ky_resmgr_create(kyAllocator *alloc);

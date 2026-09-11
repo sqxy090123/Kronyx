@@ -265,22 +265,21 @@ static kyAstNode *parse_primary(kyParser *p) {
 }
 
 static struct { const char *op; int prec; int right_assoc; } binops[] = {
-    { "==",  1, 0 }, { "!=",  1, 0 },           /* 0-1: equality */
-    { "<",   2, 0 }, { "<=",  2, 0 },            /* 2-3: relational */
-    { ">",   2, 0 }, { ">=",  2, 0 },            /* 4-5: relational */
-    { "<<",  3, 0 }, { ">>",  3, 0 },            /* 6-7: shift */
-    { "+",   4, 0 }, { "-",   4, 0 },            /* 8-9: additive */
-    { "*",   5, 0 }, { "/",   5, 0 },            /* 10-11: multiplicative */
-    { "%",   5, 0 },                              /* 12: modulo */
-    { "&",   6, 0 },                              /* 13: bitwise AND */
-    { "^",   7, 0 },                              /* 14: bitwise XOR */
-    { "|",   8, 0 },                              /* 15: bitwise OR */
-    { "&&",  9, 0 }, { "||", 10, 0 },            /* 16-17: logical (left-assoc, C standard) */
-    /* Note: ternary (? :) is NOT implemented; no TK_QUESTION in find_binop */
-    { "=",  12, 1 }, { "+=", 12, 1 },            /* 18-19: assignment */
-    { "-=", 12, 1 }, { "*=", 12, 1 },            /* 21-22: assignment */
-    { "/=", 12, 1 }, { "%=", 12, 1 },            /* 23-24: assignment */
-    { NULL,  0, 0 }
+    { "==",  1,  0 }, { "!=",  1,  0 },          /* 0-1 */
+    { "<",   2,  0 }, { "<=",  2,  0 },           /* 2-3 */
+    { ">",   2,  0 }, { ">=",  2,  0 },           /* 4-5 */
+    { "<<",  3,  0 }, { ">>",  3,  0 },           /* 6-7 */
+    { "+",   4,  0 }, { "-",   4,  0 },           /* 8-9 */
+    { "*",   5,  0 }, { "/",   5,  0 },           /* 10-11 */
+    { "%",   5,  0 },                              /* 12 */
+    { "&&",  9,  0 }, { "||", 10,  0 },           /* 13-14 */
+    { "~",  15,  0 },                              /* 15 (unary, unused in find_binop) */
+    { "&",   6,  0 },                              /* 16 */
+    { "=",  12,  1 }, { "+=", 12,  1 },           /* 17-18 */
+    { "-=", 12,  1 }, { "*=", 12,  1 },           /* 19-20 */
+    { "/=", 12,  1 }, { "%=", 12,  1 },           /* 21-22 */
+    { "|",   8,  0 }, { "^",   7,  0 },           /* 23-24 */
+    { NULL,  0,  0 }
 };
 
 static int find_binop(kyToken *t) {
@@ -299,17 +298,18 @@ static int find_binop(kyToken *t) {
         case KYX_TK_STAR:     return 10; /* * */
         case KYX_TK_SLASH:    return 11; /* / */
         case KYX_TK_MOD:      return 12; /* % */
-        case KYX_TK_BAND:     return 13; /* & */
-        case KYX_TK_BXOR:     return 14; /* ^ */
-        case KYX_TK_BOR:      return 15; /* | */
-        case KYX_TK_AND:      return 16; /* && */
-        case KYX_TK_OR:       return 17; /* || */
-        case KYX_TK_ASSIGN:   return 18; /* = */
-        case KYX_TK_PLUSEQ:   return 19; /* += */
-        case KYX_TK_MINUSEQ:  return 20; /* -= */
-        case KYX_TK_STAREQ:   return 21; /* *= */
-        case KYX_TK_DIVEQ:    return 22; /* /= */
-        case KYX_TK_MODEQ:    return 23; /* %= */
+        case KYX_TK_AND:      return 13; /* && */
+        case KYX_TK_OR:       return 14; /* || */
+        case KYX_TK_BNOT:     return 15; /* ~ */
+        case KYX_TK_BAND:     return 16; /* & */
+        case KYX_TK_ASSIGN:   return 17; /* = */
+        case KYX_TK_PLUSEQ:   return 17; /* += */
+        case KYX_TK_MINUSEQ:  return 18; /* -= */
+        case KYX_TK_STAREQ:   return 19; /* *= */
+        case KYX_TK_DIVEQ:    return 20; /* /= */
+        case KYX_TK_MODEQ:    return 21; /* %= */
+        case KYX_TK_BOR:      return 22; /* | */
+        case KYX_TK_BXOR:     return 23; /* ^ */
         default:              return -1;
     }
 }
@@ -326,8 +326,12 @@ static kyAstNode *parse_expression(kyParser *p, int min_prec) {
         tok_advance(p);
         kyAstNode *n = ast_new(KY_AST_EXPR_BINOP, t->line);
         strncpy(n->as.binop.op, t->start, t->len < sizeof(n->as.binop.op) - 1 ? t->len : sizeof(n->as.binop.op) - 1);
+        n->as.binop.op_kind = (int)t->kind;
         n->as.binop.left = left;
         int next_min_prec = right_assoc ? prec : prec + 1;
+        if (op_idx >= 16) {
+            next_min_prec = 0;
+        }
         n->as.binop.right = parse_expression(p, next_min_prec);
         if (!n->as.binop.right) { free(n); return left; }
         left = n;

@@ -4,6 +4,7 @@
 #include "defines.h"
 #include "memory.h"
 #include "array.h"
+#include "hashmap.h"
 
 typedef struct kyEntity {
     uint32_t id;
@@ -52,6 +53,7 @@ typedef struct kyWorld {
     kyArray free_ids;
     kyArray systems;
     uint32_t next_version;
+    kyHashMap name_cache;
 } kyWorld;
 
 KY_API kyWorld *ky_world_create(kyAllocator *alloc);

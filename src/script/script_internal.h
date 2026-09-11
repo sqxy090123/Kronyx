@@ -43,7 +43,7 @@ struct kyAstNode {
         struct { kyAstNode *expr; } expr_stmt;
         struct { kyAstNode **stmts; int count; int cap; } block;
         struct { kyAstNode **exprs; int count; int cap; } expr_list;
-        struct { kyAstNode *left; kyAstNode *right; char op[8]; } binop;
+        struct { kyAstNode *left; kyAstNode *right; char op[8]; int op_kind; } binop;
         struct { char op[4]; kyAstNode *operand; } unop;
         struct { kyToken tok; } literal;
         struct { char *name; } ident;

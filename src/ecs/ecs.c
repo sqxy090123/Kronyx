@@ -181,6 +181,7 @@ kyWorld *ky_world_create(kyAllocator *alloc) {
     ky_array_init(&w->slots, alloc, sizeof(kyEntitySlot), 64);
     ky_array_init(&w->free_ids, alloc, sizeof(uint32_t), 16);
     ky_array_init(&w->systems, alloc, sizeof(kySystem), 8);
+    ky_hashmap_init(&w->name_cache, alloc, 16);
     w->next_version = 1;
     return w;
 }
@@ -198,6 +199,7 @@ void ky_world_destroy(kyWorld *w) {
         }
         ky_mem_free(&w->alloc, a->columns);
     }
+    ky_hashmap_deinit(&w->name_cache);
     ky_array_deinit(&w->component_types);
     ky_array_deinit(&w->archetypes);
     ky_array_deinit(&w->slots);
@@ -210,6 +212,10 @@ uint32_t ky_world_register_component(kyWorld *w, const kyComponentType *t) {
     kyComponentType ct = *t;
     ct.type_id = (uint32_t)w->component_types.len;
     ky_array_push(&w->component_types, &ct);
+    if (t->name) {
+        char *key = (char *)ky_mem_dup(&w->alloc, t->name, strlen(t->name) + 1);
+        if (key) ky_hashmap_set_key(&w->name_cache, key, (void *)(size_t)ct.type_id);
+    }
     return ct.type_id;
 }
 
@@ -220,26 +226,29 @@ const kyComponentType *ky_world_component_type(const kyWorld *w, uint32_t type_i
 
 uint32_t ky_world_component_type_by_name(const kyWorld *w, const char *name) {
     if (!w || !name) return (uint32_t)-1;
-    for (uint32_t i = 0; i < w->component_types.len; ++i) {
-        const kyComponentType *ct = ky_world_component_type(w, i);
-        if (ct && ct->name && strcmp(ct->name, name) == 0) return i;
-    }
-    return (uint32_t)-1;
+    void *v = ky_hashmap_get(&w->name_cache, name);
+    if (!v) return (uint32_t)-1;
+    return (uint32_t)(size_t)v;
 }
 
 void ky_world_register_system(kyWorld *w, const kySystem *sys) {
     ky_array_push(&w->systems, sys);
 }
 
-static int sys_order_cmp(const void *a, const void *b) {
-    const kySystem *sa = (const kySystem *)a;
-    const kySystem *sb = (const kySystem *)b;
-    return (int)(sa->order - sb->order);
-}
-
 void ky_world_sort_systems(kyWorld *w) {
-    if (w->systems.len > 1) {
-        qsort(w->systems.data, w->systems.len, sizeof(kySystem), sys_order_cmp);
+    /* Insertion sort — stable, no heap allocation, optimal for small N */
+    size_t n = w->systems.len;
+    for (size_t i = 1; i < n; ++i) {
+        kySystem key;
+        memcpy(&key, ky_array_get(&w->systems, i), sizeof(kySystem));
+        size_t j = i;
+        while (j > 0) {
+            kySystem *prev = (kySystem *)ky_array_get(&w->systems, j - 1);
+            if (prev->order <= key.order) break;
+            memcpy(ky_array_get(&w->systems, j), prev, sizeof(kySystem));
+            --j;
+        }
+        memcpy(ky_array_get(&w->systems, j), &key, sizeof(kySystem));
     }
 }
 

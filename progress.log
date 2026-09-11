@@ -339,7 +339,9 @@ ctest --test-dir build --output-on-failure
 - [ ] Issue #10 大整数字面量截断修复（编译期 emit OP_LOADFLOAT 或 compile-time error）
 - [ ] Issue #9 三元右结合修复（parser.c:273 right_assoc=0→1）
 - [ ] Issue #11 stack 边界检查加固
-- [ ] 排查其余 AST 节点"指针当数组写"同类模式（`new_expr` / `anon_func` / `call.args` 等）
+- [ ] **Issue #12: `val_truthy` 不处理 FLOAT 类型的 0.0** — 整数字面量经 OP_LOADCONST 加载为 KYT_FLOAT，`val_truthy(0.0)` 返回真（因只检查 NIL 和 BOOL），导致 `0&&1→1`（应为 0）、`0||1→0`（应为 1）
+- [ ] **Issue #13: `<<`/`>>` 优先级低于 `&&`/`||`** — binops 表 `<<(prec=6) < &&(prec=9)`，与 C 标准相反；`1&&2<<3` 解析为 `(1&&2)<<3=16` 而非 `1&&(2<<3)=1`
+- [ ] 排查其余 AST 节点"指针当数组写"同类模式
 - [ ] 长驻 VM 累积分配无 GC（字符串/全局名 strdup 手动管理）的回收策略
 - [ ] P5 kyx debugger (step/break/watch) + 脚本 hot reload
 - [ ] P6 2D/3D demo + 真 GPU 环境 Vulkan 后端

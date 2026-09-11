@@ -141,11 +141,9 @@ static int ky_scene_reinit_world(kyScene *s) {
 }
 
 static void apply_attr(kyScene *s, kyEntity ent, uint32_t tid,
+                        uint32_t ttid, uint32_t stid, uint32_t ctid,
                         const char *key, const char *val) {
     if (tid == (uint32_t)-1) return;
-    uint32_t ttid = ky_world_component_type_by_name(s->world, "transform");
-    uint32_t stid = ky_world_component_type_by_name(s->world, "sprite");
-    uint32_t ctid = ky_world_component_type_by_name(s->world, "camera2d");
     if (tid == ttid) {
         kyTransform *tr = (kyTransform *)ky_world_get_component(s->world, ent, tid);
         if (!tr) return;
@@ -340,6 +338,7 @@ int ky_scene_load(kyScene *s, const char *path) {
         /* Second pass: apply attributes */
         for (int ai = 0; ai < attr_counts[ei]; ai++) {
             apply_attr(s, ent, attr_tids[ei][ai],
+                       tid_transform, tid_sprite, tid_camera,
                        attr_keys[ei][ai], attr_vals[ei][ai]);
         }
     }
