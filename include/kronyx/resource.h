@@ -1,6 +1,17 @@
 #ifndef KRONYX_RESOURCE_H
 #define KRONYX_RESOURCE_H
 
+/**
+ * @file kronyx/resource.h
+ * @brief Resource manager with reference counting.
+ *
+ * Resources are keyed by path string and stored in a hashmap.
+ * Each resource has a ref_count; when it drops to zero the
+ * on_destroy callback is invoked and the resource is freed.
+ * The owned_keys secondary array has been removed — all iteration
+ * is done directly over the hashmap entries.
+ */
+
 #include "defines.h"
 #include "memory.h"
 #include "hashmap.h"
@@ -49,9 +60,13 @@ typedef struct kyResourceManager {
 KY_API kyResourceManager *ky_resmgr_create(kyAllocator *alloc);
 KY_API void ky_resmgr_destroy(kyResourceManager *m);
 
+/** Register resource; returns 0 if path already exists. Caller must later release. */
 KY_API int ky_resmgr_register(kyResourceManager *m, kyResource *r);
+/** Find resource by path; returns NULL if not found. Does not increment ref count. */
 KY_API kyResource *ky_resmgr_find(const kyResourceManager *m, const char *path);
+/** Acquire: increments ref_count; returns NULL if not found. */
 KY_API kyResource *ky_resmgr_acquire(kyResourceManager *m, const char *path);
+/** Release: decrements ref_count; destroys when it reaches zero. */
 KY_API void ky_resmgr_release(kyResourceManager *m, kyResource *r);
 KY_API size_t ky_resmgr_count(const kyResourceManager *m);
 
