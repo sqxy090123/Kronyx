@@ -461,11 +461,8 @@ static int render_frame(kyRenderDevice *rd, kyWorld *w, const kyCamera2D *cam,
 }
 
 static const kyComponentType *world_find_type(const kyWorld *w, const char *name) {
-    for (size_t i = 0; i < w->component_types.len; i++) {
-        const kyComponentType *t = (const kyComponentType *)ky_array_get(&w->component_types, i);
-        if (t && t->name && strcmp(t->name, name) == 0) return t;
-    }
-    return NULL;
+    uint32_t id = ky_world_component_type_by_name(w, name);
+    return id != UINT32_MAX ? ky_world_component_type(w, id) : NULL;
 }
 
 kyTexture *ky2d_make_texture(kyRenderDevice *rd, int w, int h, int channels, const void *pixels) {

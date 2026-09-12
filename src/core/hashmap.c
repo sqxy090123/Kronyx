@@ -153,11 +153,20 @@ int ky_hashmap_remove(kyHashMap *m, const char *key) {
     size_t dist = 0;
     kyHashEntry *e = find_entry(m, key, &dist);
     if (!e) return 0;
-    e->state = KY_HASHMAP_STATE_TOMB;
-    e->key = NULL;
+    /* Release owned key and reset entry to empty state */
+    if (e->owned) {
+        ky_mem_free(m->alloc, (void *)(uintptr_t)e->key);
+        e->key = NULL;
+    }
     e->value = NULL;
+    e->owned = 0;
+    e->state = KY_HASHMAP_STATE_EMPTY;
     m->count--;
-    m->tomb_count++;
+    m->tomb_count--;
+    /* Compact if tomb accumulation exceeds threshold */
+    if (m->tomb_count > 8) {
+        hashmap_resize(m, m->cap);
+    }
     return 1;
 }
 

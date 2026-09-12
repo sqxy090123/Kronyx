@@ -15,15 +15,19 @@ static kyArchetype *arch_at(const kyWorld *w, int32_t idx) {
 }
 
 static int arch_has_type(const kyArchetype *a, uint32_t type_id) {
-    for (uint32_t i = 0; i < a->type_count; ++i) {
-        if (a->types[i] == type_id) return (int)i;
+    /* Types are sorted; binary search for O(log n). */
+    uint32_t lo = 0, hi = a->type_count;
+    while (lo < hi) {
+        uint32_t mid = (lo + hi) >> 1;
+        if (a->types[mid] < type_id) lo = mid + 1;
+        else hi = mid;
     }
-    return -1;
+    return (lo < a->type_count && a->types[lo] == type_id) ? (int)lo : -1;
 }
 
 static void *find_comp(const kyWorld *w, const kyArchetype *a, size_t row, uint32_t type_id) {
     int col = arch_has_type(a, type_id);
-    return col < 0 ? NULL : (char *)a->columns[col] + row * comp_type(w, type_id)->size;
+    return col < 0 ? NULL : (char *)a->columns[col] + row * a->strides[col];
 }
 
 static uint64_t archetype_hash(const uint32_t *types, uint32_t n) {
@@ -44,10 +48,11 @@ static int archetype_matches(const kyArchetype *a, const uint32_t *types, uint32
 }
 
 static int archetype_find(const kyWorld *w, const uint32_t *types, uint32_t n) {
+    uint64_t target_hash = archetype_hash(types, n);
     const kyArray *archs = &w->archetypes;
     for (size_t i = 0; i < archs->len; ++i) {
         kyArchetype *a = (kyArchetype *)ky_array_get(archs, i);
-        if (archetype_matches(a, types, n)) return (int)i;
+        if (a->type_hash == target_hash && archetype_matches(a, types, n)) return (int)i;
     }
     return KY_ARCH_NONE;
 }
@@ -135,21 +140,23 @@ static int32_t move_entity(kyWorld *w, uint32_t id, const uint32_t *new_types, u
     kyArchetype *oa = old_arch == KY_ARCH_NONE ? NULL : arch_at(w, old_arch);
 
     for (uint32_t i = 0; i < new_count; ++i) {
-        const kyComponentType *ct = comp_type(w, types[i]);
-        void *dst = (char *)na->columns[i] + new_row * ct->size;
-        memset(dst, 0, ct->size);
+        void *dst = (char *)na->columns[i] + new_row * na->strides[i];
+        memset(dst, 0, na->strides[i]);
         int kept = 0;
         if (oa) {
             int col = arch_has_type(oa, types[i]);
             if (col >= 0) {
-                memcpy(dst, (char *)oa->columns[col] + old_row * ct->size, ct->size);
+                memcpy(dst, (char *)oa->columns[col] + old_row * oa->strides[col], na->strides[i]);
                 kept = 1;
             }
         }
         /* Only construct components that are genuinely new; ones carried over
          * from the old archetype already have live data (memcpy'd above) and
          * must not have their ctor recalled. */
-        if (!kept && ct->ctor) ct->ctor(dst);
+        if (!kept) {
+            const kyComponentType *ct = comp_type(w, types[i]);
+            if (ct->ctor) ct->ctor(dst);
+        }
     }
     na->entity_ids[new_row] = id;
 
@@ -161,7 +168,7 @@ static int32_t move_entity(kyWorld *w, uint32_t id, const uint32_t *new_types, u
             }
             if (!keep) {
                 const kyComponentType *ct = comp_type(w, oa->types[i]);
-                if (ct->dtor) ct->dtor((char *)oa->columns[i] + old_row * ct->size);
+                if (ct->dtor) ct->dtor((char *)oa->columns[i] + old_row * oa->strides[i]);
             }
         }
         archetype_remove_row(w, oa, old_row);
