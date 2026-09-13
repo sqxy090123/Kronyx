@@ -81,30 +81,30 @@ static void ast_free_node(kyAstNode *n) {
             free(n->as.func_decl.params); ast_free(n->as.func_decl.body); free(n->as.func_decl.proto); break;
         case KY_AST_CLASS_DECL: {
             kyAstClass *k = n->as.class_decl.klass;
-            free(n->as.class_decl.name); free(n->as.class_decl.parent);
-            if (k) { for (int i = 0; i < k->field_count; i++) ast_free(k->fields[i]); free(k->fields); free(k); }
-            ast_free(n->as.class_decl.body); break;
+            if (k) {
+                free(k);
+            }
+            free(n->as.class_decl.name); free(n->as.class_decl.parent); ast_free(n->as.class_decl.body); break;
         }
-        case KY_AST_IF_STMT: ast_free(n->as.if_stmt.cond); ast_free(n->as.if_stmt.then_b); ast_free(n->as.if_stmt.else_b); break;
-        case KY_AST_WHILE_STMT: ast_free(n->as.while_stmt.cond); ast_free(n->as.while_stmt.body); break;
-        case KY_AST_FOR_STMT: ast_free(n->as.for_stmt.init); ast_free(n->as.for_stmt.cond); ast_free(n->as.for_stmt.inc); ast_free(n->as.for_stmt.body); break;
-        case KY_AST_RETURN_STMT: ast_free(n->as.return_stmt.expr); break;
-        case KY_AST_EXPR_STMT: ast_free(n->as.expr_stmt.expr); break;
+        case KY_AST_IF_STMT:
+            ast_free(n->as.if_stmt.cond); ast_free(n->as.if_stmt.then_b); ast_free(n->as.if_stmt.else_b); break;
+        case KY_AST_WHILE_STMT:
+            ast_free(n->as.while_stmt.cond); ast_free(n->as.while_stmt.body); break;
+        case KY_AST_FOR_STMT:
+            ast_free(n->as.for_stmt.init); ast_free(n->as.for_stmt.cond); ast_free(n->as.for_stmt.inc); ast_free(n->as.for_stmt.body); break;
+        case KY_AST_RETURN_STMT:
+            ast_free(n->as.return_stmt.expr); break;
+        case KY_AST_EXPR_STMT:
+            ast_free(n->as.expr_stmt.expr); break;
         case KY_AST_BLOCK:
             for (int i = 0; i < n->as.block.count; i++) ast_free(n->as.block.stmts[i]);
             free(n->as.block.stmts); break;
-        case KY_AST_EXPR_FIELD: ast_free(n->as.field.obj); free(n->as.field.field); break;
-        case KY_AST_EXPR_NEW:
-            for (int i = 0; i < n->as.new_expr.arg_count; i++) ast_free(n->as.new_expr.args[i]);
-            free(n->as.new_expr.args); break;
-        case KY_AST_EXPR_ANON_FUNC:
-            for (int i = 0; i < n->as.anon_func.param_count; i++) free(n->as.anon_func.params[i]);
-            free(n->as.anon_func.params); ast_free(n->as.anon_func.body); free(n->as.anon_func.proto); break;
-        case KY_AST_EXPR_TERNARY: ast_free(n->as.ternary.cond); ast_free(n->as.ternary.true_b); ast_free(n->as.ternary.false_b); break;
         case KY_AST_EXPR_BINOP:
             ast_free(n->as.binop.left); ast_free(n->as.binop.right); break;
         case KY_AST_EXPR_UNOP:
             ast_free(n->as.unop.operand); break;
+        case KY_AST_EXPR_LITERAL:
+            /* No dynamic memory for literals */ break;
         case KY_AST_EXPR_IDENT:
             free(n->as.ident.name); break;
         case KY_AST_EXPR_CALL:
@@ -112,6 +112,18 @@ static void ast_free_node(kyAstNode *n) {
             free(n->as.call.args); ast_free(n->as.call.callee); break;
         case KY_AST_EXPR_INDEX:
             ast_free(n->as.index.obj); ast_free(n->as.index.idx); break;
+        case KY_AST_EXPR_FIELD:
+            ast_free(n->as.field.obj); free(n->as.field.field); break;
+        case KY_AST_EXPR_NEW:
+            free(n->as.new_expr.class_name);
+            for (int i = 0; i < n->as.new_expr.arg_count; i++) ast_free(n->as.new_expr.args[i]);
+            free(n->as.new_expr.args); break;
+        case KY_AST_EXPR_ANON_FUNC:
+            for (int i = 0; i < n->as.anon_func.param_count; i++) free(n->as.anon_func.params[i]);
+            free(n->as.anon_func.params); ast_free(n->as.anon_func.body); free(n->as.anon_func.proto); break;
+        case KY_AST_EXPR_TERNARY:
+            /* cond is owned by the outer expression, only free true_b and false_b */
+            ast_free(n->as.ternary.true_b); ast_free(n->as.ternary.false_b); break;
         case KY_AST_PROGRAM:
             for (int i = 0; i < n->as.program.count; i++) ast_free(n->as.program.children[i]);
             free(n->as.program.children); break;
@@ -122,7 +134,8 @@ static void ast_free_node(kyAstNode *n) {
 
 static void ast_free(kyAstNode *n) {
     if (!n) return;
-    if (n->next) ast_free(n->next);
+    /* In this parser implementation, next pointers are not used.
+       Each node is managed through its parent's children array. */
     ast_free_node(n);
 }
 
@@ -273,12 +286,13 @@ static struct { const char *op; int prec; int right_assoc; } binops[] = {
     { "*",   5,  0 }, { "/",   5,  0 },           /* 10-11 */
     { "%",   5,  0 },                              /* 12 */
     { "&&",  9,  0 }, { "||", 10,  0 },           /* 13-14 */
-    { "~",  15,  0 },                              /* 15 (unary, unused in find_binop) */
-    { "&",   6,  0 },                              /* 16 */
-    { "=",  12,  1 }, { "+=", 12,  1 },           /* 17-18 */
-    { "-=", 12,  1 }, { "*=", 12,  1 },           /* 19-20 */
-    { "/=", 12,  1 }, { "%=", 12,  1 },           /* 21-22 */
-    { "|",   8,  0 }, { "^",   7,  0 },           /* 23-24 */
+    { "?",   11, 1 }, { ":",   11, 0 },           /* 15-16 (ternary) */
+    { "~",  15,  0 },                              /* 17 (unary, unused in find_binop) */
+    { "&",   6,  0 },                              /* 18 */
+    { "=",  12,  1 }, { "+=", 12,  1 },           /* 19-20 */
+    { "-=", 12,  1 }, { "*=", 12,  1 },           /* 21-22 */
+    { "/=", 12,  1 }, { "%=", 12,  1 },           /* 23-24 */
+    { "|",   8,  0 }, { "^",   7,  0 },           /* 25-26 */
     { NULL,  0,  0 }
 };
 
@@ -300,16 +314,18 @@ static int find_binop(kyToken *t) {
         case KYX_TK_MOD:      return 12; /* % */
         case KYX_TK_AND:      return 13; /* && */
         case KYX_TK_OR:       return 14; /* || */
-        case KYX_TK_BNOT:     return 15; /* ~ */
-        case KYX_TK_BAND:     return 16; /* & */
-        case KYX_TK_ASSIGN:   return 17; /* = */
-        case KYX_TK_PLUSEQ:   return 17; /* += */
-        case KYX_TK_MINUSEQ:  return 18; /* -= */
-        case KYX_TK_STAREQ:   return 19; /* *= */
-        case KYX_TK_DIVEQ:    return 20; /* /= */
-        case KYX_TK_MODEQ:    return 21; /* %= */
-        case KYX_TK_BOR:      return 22; /* | */
-        case KYX_TK_BXOR:     return 23; /* ^ */
+        case KYX_TK_QUESTION: return 15; /* ? */
+        case KYX_TK_COLON:    return 16; /* : */
+        case KYX_TK_BNOT:     return 17; /* ~ */
+        case KYX_TK_BAND:     return 18; /* & */
+        case KYX_TK_ASSIGN:   return 19; /* = */
+        case KYX_TK_PLUSEQ:   return 19; /* += */
+        case KYX_TK_MINUSEQ:  return 20; /* -= */
+        case KYX_TK_STAREQ:   return 21; /* *= */
+        case KYX_TK_DIVEQ:    return 22; /* /= */
+        case KYX_TK_MODEQ:    return 23; /* %= */
+        case KYX_TK_BOR:      return 24; /* | */
+        case KYX_TK_BXOR:     return 25; /* ^ */
         default:              return -1;
     }
 }
@@ -324,12 +340,43 @@ static kyAstNode *parse_expression(kyParser *p, int min_prec) {
         int prec = binops[op_idx].prec;
         int right_assoc = binops[op_idx].right_assoc;
         tok_advance(p);
+        
+        /* Special handling for ternary operator */
+        if (t->kind == KYX_TK_QUESTION) {
+            kyAstNode *n = ast_new(KY_AST_EXPR_TERNARY, t->line);
+            if (!n) return left;
+            n->as.ternary.cond = left;
+            n->as.ternary.true_b = parse_expression(p, 0); /* parse true branch */
+            if (!n->as.ternary.true_b) {
+                ast_free_node(n);
+                return left;
+            }
+
+            /* Expect colon after true branch */
+            if (tok_current(p)->kind != KYX_TK_COLON) {
+                parser_error(p, "expected ':' after ternary true branch");
+                ast_free_node(n);
+                return left;
+            }
+            tok_advance(p); /* consume colon */
+
+            n->as.ternary.false_b = parse_expression(p, prec + 1); /* parse false branch with higher precedence */
+            if (!n->as.ternary.false_b) {
+                parser_error(p, "expected expression after ternary colon");
+                ast_free_node(n);
+                return left;
+            }
+            left = n;
+            continue;
+        }
+        
+        /* Regular binary operator */
         kyAstNode *n = ast_new(KY_AST_EXPR_BINOP, t->line);
         strncpy(n->as.binop.op, t->start, t->len < sizeof(n->as.binop.op) - 1 ? t->len : sizeof(n->as.binop.op) - 1);
         n->as.binop.op_kind = (int)t->kind;
         n->as.binop.left = left;
         int next_min_prec = right_assoc ? prec : prec + 1;
-        if (op_idx >= 16) {
+        if (op_idx >= 18) {
             next_min_prec = 0;
         }
         n->as.binop.right = parse_expression(p, next_min_prec);
@@ -413,6 +460,10 @@ static kyAstNode *parse_statement(kyParser *p) {
         n->as.class_decl.name = tok_dup(cname);
         n->as.class_decl.parent = NULL;
         n->as.class_decl.klass = (kyAstClass *)calloc(1, sizeof(kyAstClass));
+        if (!n->as.class_decl.klass) {
+            free(n);
+            return NULL;
+        }
         if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_IDENT) {
             n->as.class_decl.parent = tok_dup(tok_current(p));
             tok_advance(p);
@@ -542,7 +593,10 @@ kyParser *kyx_parser_create(void *stream) {
 }
 
 void kyx_parser_destroy(kyParser *p) {
-    if (p) { ast_free(p->root); free(p); }
+    if (p) { 
+        ast_free(p->root); 
+        free(p); 
+    }
 }
 
 kyAstNode *kyx_parser_parse(kyParser *p) {
