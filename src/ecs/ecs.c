@@ -221,7 +221,7 @@ uint32_t ky_world_register_component(kyWorld *w, const kyComponentType *t) {
     ky_array_push(&w->component_types, &ct);
     if (t->name) {
         char *key = (char *)ky_mem_dup(&w->alloc, t->name, strlen(t->name) + 1);
-        if (key) ky_hashmap_set_key(&w->name_cache, key, (void *)(size_t)ct.type_id);
+        if (key) ky_hashmap_set_key(&w->name_cache, key, (void *)(size_t)(ct.type_id + 1));
     }
     return ct.type_id;
 }
@@ -235,7 +235,8 @@ uint32_t ky_world_component_type_by_name(const kyWorld *w, const char *name) {
     if (!w || !name) return (uint32_t)-1;
     void *v = ky_hashmap_get(&w->name_cache, name);
     if (!v) return (uint32_t)-1;
-    return (uint32_t)(size_t)v;
+    /* Stored as (type_id + 1) so type_id 0 is not confused with "missing". */
+    return (uint32_t)((size_t)v - 1);
 }
 
 void ky_world_register_system(kyWorld *w, const kySystem *sys) {
@@ -322,7 +323,8 @@ kyEntity ky_world_get_alive_entity(const kyWorld *w, int idx) {
 }
 
 void *ky_world_add_component(kyWorld *w, kyEntity e, uint32_t type_id) {
-    if (!ky_entity_valid(w, e)) return NULL;
+    if (!w || !ky_entity_valid(w, e)) return NULL;
+    if (type_id >= w->component_types.len) return NULL;
     kyEntitySlot *slot = slot_at(w, e.id);
     if (slot->archetype_index != KY_ARCH_NONE) {
         void *p = find_comp(w, arch_at(w, slot->archetype_index), slot->row, type_id);

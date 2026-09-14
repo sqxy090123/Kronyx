@@ -81,8 +81,10 @@ static kyHashEntry *find_entry(kyHashMap *m, const char *key, size_t *out_dist) 
     size_t mask = m->cap - 1;
     size_t slot = (size_t)ky_hash_str(key) & mask;
     size_t dist = 0;
-    while (m->entries[slot].state == KY_HASHMAP_STATE_USED) {
-        if (strcmp(m->entries[slot].key, key) == 0) {
+    /* TOMB entries keep probe chains alive, so only EMPTY terminates a probe. */
+    while (m->entries[slot].state != KY_HASHMAP_STATE_EMPTY) {
+        if (m->entries[slot].state == KY_HASHMAP_STATE_USED &&
+            strcmp(m->entries[slot].key, key) == 0) {
             if (out_dist) *out_dist = dist;
             return &m->entries[slot];
         }
@@ -112,29 +114,34 @@ static void hashmap_set_impl(kyHashMap *m, const char *key, void *value, int own
     }
     size_t mask = m->cap - 1;
     size_t slot = (size_t)ky_hash_str(key) & mask;
-    kyHashEntry *tomb = NULL;
-    while (m->entries[slot].state == KY_HASHMAP_STATE_USED) {
-        if (strcmp(m->entries[slot].key, key) == 0) {
+    size_t insert_slot = (size_t)-1;
+    /* Walk the full probe chain, remembering the first reusable TOMB. */
+    while (m->entries[slot].state != KY_HASHMAP_STATE_EMPTY) {
+        if (m->entries[slot].state == KY_HASHMAP_STATE_USED &&
+            strcmp(m->entries[slot].key, key) == 0) {
+            /* Ownership of the incoming key transfers only on real insert. */
+            if (owns_key) ky_mem_free(m->alloc, (void *)(uintptr_t)key);
             m->entries[slot].value = value;
             return;
         }
+        if (m->entries[slot].state == KY_HASHMAP_STATE_TOMB &&
+            insert_slot == (size_t)-1) {
+            insert_slot = slot;
+        }
         slot = (slot + 1) & mask;
     }
-    if (m->entries[slot].state == KY_HASHMAP_STATE_TOMB) {
-        tomb = &m->entries[slot];
+    if (insert_slot == (size_t)-1) {
+        insert_slot = slot; /* slot is EMPTY */
+    } else {
+        m->tomb_count--; /* reusing a tombstone */
     }
-    if (!tomb) {
-        size_t scan = slot;
-        while (m->entries[scan].state == KY_HASHMAP_STATE_USED) {
-            scan = (scan + 1) & mask;
-        }
-        tomb = &m->entries[scan];
-    }
-    tomb->key = key;
-    tomb->value = value;
-    tomb->state = KY_HASHMAP_STATE_USED;
-    tomb->owned = owns_key;
+    KY_ASSERT(insert_slot < m->cap);
+    m->entries[insert_slot].key = key;
+    m->entries[insert_slot].value = value;
+    m->entries[insert_slot].state = KY_HASHMAP_STATE_USED;
+    m->entries[insert_slot].owned = owns_key;
     m->count++;
+    KY_ASSERT(m->count + m->tomb_count <= m->cap);
 }
 
 void ky_hashmap_set(kyHashMap *m, const char *key, void *value) {
@@ -150,23 +157,19 @@ void ky_hashmap_set_key(kyHashMap *m, char *owned_key, void *value) {
 }
 
 int ky_hashmap_remove(kyHashMap *m, const char *key) {
-    size_t dist = 0;
-    kyHashEntry *e = find_entry(m, key, &dist);
+    kyHashEntry *e = find_entry(m, key, NULL);
     if (!e) return 0;
-    /* Release owned key and reset entry to empty state */
+    /* Release owned key, mark TOMB so later probes still walk past this slot. */
     if (e->owned) {
         ky_mem_free(m->alloc, (void *)(uintptr_t)e->key);
-        e->key = NULL;
     }
+    e->key = NULL;
     e->value = NULL;
     e->owned = 0;
-    e->state = KY_HASHMAP_STATE_EMPTY;
+    e->state = KY_HASHMAP_STATE_TOMB;
     m->count--;
-    m->tomb_count--;
-    /* Compact if tomb accumulation exceeds threshold */
-    if (m->tomb_count > 8) {
-        hashmap_resize(m, m->cap);
-    }
+    m->tomb_count++;
+    /* Reclamation happens in place on the next insert or resize. */
     return 1;
 }
 

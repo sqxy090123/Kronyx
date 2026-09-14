@@ -27,6 +27,14 @@ kyScene *ky_scene_create(kyAllocator *alloc, const char *name) {
 void ky_scene_destroy(kyScene *s) {
     if (!s) return;
     ky_world_destroy(s->world);
+    /* Meta values are scene-owned strings; the hashmap only frees owned keys. */
+    for (size_t i = 0; i < s->meta.cap; ++i) {
+        kyHashEntry *e = &s->meta.entries[i];
+        if (e->state == KY_HASHMAP_STATE_USED) {
+            ky_mem_free(&s->alloc, e->value);
+            e->value = NULL;
+        }
+    }
     ky_hashmap_deinit(&s->meta);
     ky_mem_free(&s->alloc, s->name);
     ky_mem_free(&s->alloc, s);
@@ -37,8 +45,15 @@ void ky_scene_set_meta(kyScene *s, const char *key, const char *value) {
     kyAllocator *al = &s->world->alloc;
     char *k = (char *)ky_mem_dup(al, key, strlen(key) + 1);
     char *v = (char *)ky_mem_dup(al, value, strlen(value) + 1);
-    if (k && v) ky_hashmap_set_key(&s->meta, k, v);
-    else { ky_mem_free(al, k); ky_mem_free(al, v); }
+    if (k && v) {
+        /* Replace semantics: drop the previous value before overwriting. */
+        char *old = (char *)ky_hashmap_get(&s->meta, key);
+        if (old) ky_mem_free(al, old);
+        ky_hashmap_set_key(&s->meta, k, v);
+    } else {
+        ky_mem_free(al, k);
+        ky_mem_free(al, v);
+    }
 }
 
 const char *ky_scene_get_meta(const kyScene *s, const char *key) {
@@ -81,10 +96,12 @@ int ky_scene_save(const kyScene *s, const char *path) {
         }
     }
 
-    int count = ky_world_alive_count(s->world);
-    for (int ei = 0; ei < count; ++ei) {
-        kyEntity e = ky_world_get_alive_entity(s->world, ei);
-        if (!ky_entity_valid(s->world, e)) continue;
+    /* Single pass over slots keeps id order while avoiding the O(n^2) cost of
+     * calling ky_world_get_alive_entity once per alive entity. */
+    const kyEntitySlot *slots = (const kyEntitySlot *)s->world->slots.data;
+    for (size_t si = 0; si < s->world->slots.len; ++si) {
+        if (slots[si].archetype_index < 0) continue; /* despawned slot */
+        kyEntity e = { (uint32_t)si, slots[si].version };
         if (!ky_world_has_component(s->world, e, tid_transform)) continue;
 
         fprintf(f, "\nentity \"%u(%u)\"\n", e.id, e.version);
@@ -182,6 +199,11 @@ int ky_scene_load(kyScene *s, const char *path) {
     size_t raw_len = 0;
     kyFileCode fc = ky_file_read(path, &raw, &raw_len);
     if (fc != KY_FILE_OK) return -1;
+    /* ky_file_read does not NUL-terminate; the parser below scans for '\0'. */
+    char *text = (char *)realloc(raw, raw_len + 1);
+    if (!text) { free(raw); return -1; }
+    text[raw_len] = '\0';
+    raw = text;
 
     kyAllocator saved = s->alloc;
     int r = ky_scene_reinit_world(s);

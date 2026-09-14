@@ -6,10 +6,10 @@
  * @brief Open-addressing hash map with linear probing.
  *
  * Entries use three states: EMPTY (0), USED (1), TOMB (2).
- * Tomb entries preserve probe chains after removal.
+ * Tomb entries preserve probe chains after removal; only EMPTY terminates a
+ * probe. Reusable tombstones are reclaimed in place on the next insert.
  * Auto-resizes when (count + tomb_count) * 4 >= cap * 3.
- * ky_hashmap_remove resets entries to EMPTY and frees owned keys immediately,
- * triggering compaction when tomb accumulation exceeds the threshold.
+ * ky_hashmap_remove marks the slot TOMB and frees the owned key immediately.
  */
 
 #include "defines.h"
@@ -42,7 +42,7 @@ KY_API void ky_hashmap_set(kyHashMap *m, const char *key, void *value);
 KY_API void ky_hashmap_set_key(kyHashMap *m, char *owned_key, void *value);
 KY_API void *ky_hashmap_get(const kyHashMap *m, const char *key);
 KY_API int ky_hashmap_has(const kyHashMap *m, const char *key);
-/** Remove entry; resets slot to EMPTY and frees owned key immediately. */
+/** Remove entry; marks the slot TOMB and frees the owned key immediately. */
 KY_API int ky_hashmap_remove(kyHashMap *m, const char *key);
 KY_API size_t ky_hashmap_count(const kyHashMap *m);
 /** Compute hash for a null-terminated string key. */
