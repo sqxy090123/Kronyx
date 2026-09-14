@@ -16,6 +16,11 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
   add_compile_options(/W3 /WX-)
 endif()
 
+if(KYR_ENABLE_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined)
+endif()
+
 add_library(ky_core STATIC
   src/core/math.c
   src/core/memory.c

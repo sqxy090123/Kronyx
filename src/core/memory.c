@@ -7,6 +7,10 @@ typedef struct kyTrackingState {
     size_t peak_bytes;
 } kyTrackingState;
 
+/* ky_tracking_allocator reinterprets kyMemStats as kyTrackingState. */
+KY_STATIC_ASSERT(sizeof(kyMemStats) == sizeof(kyTrackingState),
+                 "kyTrackingState layout must mirror kyMemStats");
+
 static void *def_alloc(void *ud, size_t size) {
     KY_UNUSED(ud);
     return malloc(size ? size : 1);

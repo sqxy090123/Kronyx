@@ -56,6 +56,10 @@ typedef struct kyGLCmdList {
     uint32_t index_size;
 } kyGLCmdList;
 
+/* ky_rd_begin aliases command lists via kyCmdHeader; rd must be first. */
+KY_STATIC_ASSERT(offsetof(kyGLCmdList, rd) == 0,
+                 "kyGLCmdList.rd must be the first member");
+
 static GLenum gl_topology(kyPrimitiveTopology t) {
     switch (t) {
         case KY_TRIANGLE_STRIP: return GL_TRIANGLE_STRIP;
@@ -419,6 +423,10 @@ typedef struct kyGLDevice {
 typedef struct kyGLCmdList {
     kyRenderDevice *rd;
 } kyGLCmdList;
+
+/* Stub variant used when EGL is unavailable; same offset-0 contract. */
+KY_STATIC_ASSERT(offsetof(kyGLCmdList, rd) == 0,
+                 "kyGLCmdList.rd must be the first member");
 
 static void *gl_create(void *platform_win) {
     KY_UNUSED(platform_win);

@@ -21,6 +21,11 @@ typedef struct kyConsoleCmdList {
     int texture_count;
 } kyConsoleCmdList;
 
+/* ky_rd_begin aliases any command list through kyCmdHeader, which requires
+ * the render device pointer to sit at offset 0. */
+KY_STATIC_ASSERT(offsetof(kyConsoleCmdList, rd) == 0,
+                 "kyConsoleCmdList.rd must be the first member");
+
 static void *console_create(void *platform_win) {
     KY_UNUSED(platform_win);
     kyConsoleDevice *d = (kyConsoleDevice *)malloc(sizeof(kyConsoleDevice));

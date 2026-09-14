@@ -34,4 +34,22 @@
   #define KY_INLINE static inline
 #endif
 
+/* ── Assertions ────────────────────────────────────────────────────── */
+/* Active unless NDEBUG is set; force on with KY_ENABLE_ASSERTS. */
+#if defined(KY_ENABLE_ASSERTS) || !defined(NDEBUG)
+  #define KY_ASSERT(cond)                                                     \
+      do {                                                                    \
+          if (!(cond)) {                                                      \
+              fprintf(stderr, "KY_ASSERT failed: %s (%s:%d)\n", #cond,        \
+                      __FILE__, __LINE__);                                    \
+              abort();                                                        \
+          }                                                                   \
+      } while (0)
+#else
+  #define KY_ASSERT(cond) ((void)0)
+#endif
+
+/* Compile-time assertion for invariants that must hold in every build. */
+#define KY_STATIC_ASSERT(cond, msg) _Static_assert((cond), msg)
+
 #endif

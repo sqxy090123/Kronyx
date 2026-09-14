@@ -150,7 +150,9 @@ static int ky_hmac_sha256(const uint8_t *key, size_t key_len,
     unsigned char *result = HMAC(EVP_sha256(), key, (int)key_len,
                                  msg, (size_t)msg_len, out, NULL);
     if (!result) return 0;
-    *out_len = (size_t)EVP_MAX_MD_SIZE;
+    int md_size = EVP_MD_size(EVP_sha256());
+    if (md_size <= 0) return 0;
+    *out_len = (size_t)md_size;
     return 1;
 }
 

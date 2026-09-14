@@ -57,27 +57,26 @@ static void anim_update(kyWorld *w, float dt, void *user) {
     kyViewIter it;
     int more = ky_view_begin(w, types, 2, &it);
     while (more) {
-        more = ky_view_next(&it);
         kyEntity e     = it.current;
         kySprite   *sp = (kySprite *)ky_world_get_component(w, e, tid_sprite);
         kyAnimator *a  = (kyAnimator *)ky_world_get_component(w, e, tid_anim);
-        if (!sp || !a) continue;
-        if (a->cols <= 0 || a->frames <= 0 || a->fps <= 0) continue;
-
-        a->time += dt;
-        float step = 1.0f / a->fps;
-        int   f    = (int)(a->time / step);
-        if (f < 0) f = 0;
-        if (a->looping) {
-            a->current_frame = f % a->frames;
-        } else {
-            if ((unsigned)f >= (unsigned)a->frames) {
-                f = a->frames - 1;
-                a->time = step * f;
+        if (sp && a && a->cols > 0 && a->frames > 0 && a->fps > 0) {
+            a->time += dt;
+            float step = 1.0f / a->fps;
+            int   f    = (int)(a->time / step);
+            if (f < 0) f = 0;
+            if (a->looping) {
+                a->current_frame = f % a->frames;
+            } else {
+                if ((unsigned)f >= (unsigned)a->frames) {
+                    f = a->frames - 1;
+                    a->time = step * f;
+                }
+                a->current_frame = f;
             }
-            a->current_frame = f;
+            ky_animator_apply_to_sprite(a, sp);
         }
-        ky_animator_apply_to_sprite(a, sp);
+        more = ky_view_next(&it);
     }
 }
 

@@ -635,19 +635,17 @@ static void compile_statement(kyCompileState *cs, kyAstNode *stmt) {
             int temp_reg = cs->local_count + 1;
             compile_expression(cs, stmt->as.if_stmt.cond, temp_reg);
             int jmp_idx = cs->code_count;
-            compile_emit(cs, 52, temp_reg, 0, 0);
+            compile_emit(cs, 52, temp_reg, 0, 0); /* JMPIFNOT -> else / end */
             compile_block(cs, stmt->as.if_stmt.then_b);
             if (stmt->as.if_stmt.else_b) {
                 int jump_idx = cs->code_count;
-                compile_emit(cs, 50, 0, 0, 0);
+                compile_emit(cs, 50, 0, 0, 0); /* JUMP over else (placeholder) */
                 int else_start = cs->code_count;
+                /* False condition continues at else_start. */
                 cs->code[jmp_idx + 2] = else_start - jmp_idx;
                 compile_block(cs, stmt->as.if_stmt.else_b);
-                int end_of_else = cs->code_count;
-                compile_emit(cs, 50, 0, 0, 0);
-                int jump_end = cs->code_count;
-                cs->code[jump_idx + 2] = jump_end - jump_idx;
-                cs->code[end_of_else - 1] = end_of_else - jump_end;
+                /* Then-branch skips past the else block. */
+                cs->code[jump_idx + 2] = cs->code_count - jump_idx;
             } else {
                 cs->code[jmp_idx + 2] = cs->code_count - jmp_idx;
             }
@@ -702,12 +700,9 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
             kyToken *t = &node->as.literal.tok;
             if (t->kind == KYX_TK_INT_LIT) {
                 int64_t ival = t->as.ival;
-                if (ival >= INT32_MIN && ival <= INT32_MAX) {
-                    compile_emit(cs, 2, dest, (int)ival, 0);
-                } else {
-                    int c = compile_add_const(cs, (double)ival);
-                    compile_emit(cs, 4, dest, c, 0);
-                }
+                /* Always use const pool for int literals to prevent int32 truncation */
+                int c = compile_add_const(cs, (double)ival);
+                compile_emit(cs, 4, dest, c, 0);
             } else if (t->kind == KYX_TK_FLOAT_LIT) {
                 int c = compile_add_const(cs, t->as.fval);
                 compile_emit(cs, 4, dest, c, 0);
