@@ -20,14 +20,22 @@ void ky_array_deinit(kyArray *a) {
 void ky_array_reserve(kyArray *a, size_t cap) {
     if (cap <= a->cap) return;
     size_t nc = a->cap ? a->cap : 8;
-    while (nc < cap) nc *= 2;
+    while (nc < cap) {
+        if (nc > SIZE_MAX / 2) { nc = SIZE_MAX; break; }
+        nc *= 2;
+    }
+    if (a->elem_size > 0 && nc > SIZE_MAX / a->elem_size) {
+        nc = SIZE_MAX / a->elem_size;
+    }
     a->data = ky_mem_realloc(a->alloc, a->data, nc * a->elem_size);
     a->cap = nc;
 }
 
 void *ky_array_emplace(kyArray *a) {
     if (a->len >= a->cap) {
-        ky_array_reserve(a, a->cap ? a->cap * 2 : 8);
+        size_t nc = a->cap ? a->cap * 2 : 8;
+        if (a->cap > SIZE_MAX / 2) nc = a->cap;
+        ky_array_reserve(a, nc);
     }
     return (char *)a->data + a->len++ * a->elem_size;
 }

@@ -1,0 +1,6 @@
+leak:libEGL
+leak:libGLESv2
+leak:libGLdispatch
+leak:libLLVM
+leak:libstdc++
+leak:libasan

@@ -148,6 +148,7 @@ void ky_rd_submit(kyRenderDevice *rd, void *cl) {
     if (!rd || !cl) return;
     if (rd->draw_pass_hook) {
         rd->draw_pass_hook(rd, cl, rd->draw_pass_user);
+        rd->vt->submit(rd->impl, cl);
         return;
     }
     rd->vt->submit(rd->impl, cl);

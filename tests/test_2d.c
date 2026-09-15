@@ -196,6 +196,7 @@ static void test_render_logic(void) {
     ASSERT(ky2d_render_world_auto(rd, w) == 2, "ordering scene draw count");
 
     ky_world_destroy(w);
+    ky2d_shutdown(rd);
     ky_rd_destroy(rd);
 }
 
@@ -284,6 +285,7 @@ static void test_gl_pixels(void) {
     ASSERT(px[2] > 150 && px[0] < 100 && px[1] < 60, "texture right half blueish");
 
     ky_world_destroy(w);
+    ky2d_shutdown(rd);
     ky_rd_destroy(rd);
 }
 #endif

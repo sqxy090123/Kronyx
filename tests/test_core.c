@@ -191,6 +191,41 @@ static void test_hash_stability(void) {
     KY_CHECK(h1 == h2);
 }
 
+static void test_pool_free_oob(void) {
+    kyAllocator al = ky_default_allocator();
+    kyPool p = ky_pool_create(sizeof(int), 4, &al);
+    int *x = (int *)ky_pool_alloc(&p);
+    KY_CHECK(x != NULL);
+    KY_CHECK(ky_pool_count(&p) == 1);
+    ky_pool_free(&p, NULL);
+    KY_CHECK(ky_pool_count(&p) == 1);
+    int *y = (int *)ky_pool_alloc(&p);
+    KY_CHECK(y != NULL);
+    KY_CHECK(ky_pool_count(&p) == 2);
+    /* out-of-range pointer is rejected without corrupting the pool */
+    ky_pool_free(&p, (void *)0x1);
+    KY_CHECK(ky_pool_count(&p) == 2);
+    ky_pool_destroy(&p);
+}
+
+static void test_array_reserve_overflow(void) {
+    kyAllocator al = ky_default_allocator();
+    kyArray a;
+    ky_array_init(&a, &al, sizeof(int), 0);
+    ky_array_reserve(&a, 8);
+    KY_CHECK(a.cap >= 8);
+    int v = 42;
+    void *slot = ky_array_push(&a, &v);
+    KY_CHECK(*(int *)slot == 42);
+    KY_CHECK(ky_array_get(&a, 0) != NULL);
+    KY_CHECK(ky_array_get(&a, 1) == NULL);
+    ky_array_remove_swap(&a, 0);
+    KY_CHECK(a.len == 0);
+    ky_array_clear(&a);
+    KY_CHECK(a.len == 0);
+    ky_array_deinit(&a);
+}
+
 void ky_test_run_all(void) {
     test_array();
     test_hashmap();
@@ -200,6 +235,8 @@ void ky_test_run_all(void) {
     test_arena_alignment();
     test_pool();
     test_pool_grow();
+    test_pool_free_oob();
+    test_array_reserve_overflow();
     test_hash_stability();
 }
 

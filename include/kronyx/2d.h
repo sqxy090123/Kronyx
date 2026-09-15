@@ -100,4 +100,9 @@ typedef struct ky2dContext {
 KY_API ky2dContext ky2d_context_default(void);
 KY_API int ky2d_render_with(kyRenderDevice *rd, kyWorld *w, kyEntity cam, const ky2dContext *ctx);
 
+/* Release GPU resources (shader, pipeline, buffers, white texture) cached
+ * for the given device. Must be called before ky_rd_destroy(rd) after any
+ * 2D render call to avoid leaking device resources. */
+KY_API void ky2d_shutdown(kyRenderDevice *rd);
+
 #endif

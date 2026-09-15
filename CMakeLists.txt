@@ -21,6 +21,11 @@ if(KYR_ENABLE_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   add_link_options(-fsanitize=address,undefined)
 endif()
 
+# In sanitizer builds, load LSAN suppressions via ctest ENVIRONMENT
+if(KYR_ENABLE_SANITIZERS AND EXISTS "${CMAKE_SOURCE_DIR}/lsan.supp")
+  set(_ky_lsan_env "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/lsan.supp")
+endif()
+
 add_library(ky_core STATIC
   src/core/math.c
   src/core/memory.c
@@ -75,65 +80,74 @@ endif()
 
 if(KYR_BUILD_TESTS)
   enable_testing()
+
+  # 为所有测试注入 LSAN 抑制（仅在 sanitizer 构建下生效）
+  function(ky_add_test _name)
+    add_test(NAME ${_name} COMMAND ${ARGN})
+    if(_ky_lsan_env)
+      set_tests_properties(${_name} PROPERTIES ENVIRONMENT "${_ky_lsan_env}")
+    endif()
+  endfunction()
+
   add_executable(ky_test_core tests/test_core.c)
   target_link_libraries(ky_test_core PRIVATE ky_core)
-  add_test(NAME core COMMAND ky_test_core)
+  ky_add_test(core ky_test_core)
 
   add_executable(ky_test_math tests/test_math.c)
   target_link_libraries(ky_test_math PRIVATE ky_core)
-  add_test(NAME math COMMAND ky_test_math)
+  ky_add_test(math ky_test_math)
 
   add_executable(ky_test_ecs tests/test_ecs.c)
   target_link_libraries(ky_test_ecs PRIVATE ky_engine)
-  add_test(NAME ecs COMMAND ky_test_ecs)
+  ky_add_test(ecs ky_test_ecs)
 
   add_executable(ky_test_render tests/test_render.c)
   target_link_libraries(ky_test_render PRIVATE ky_engine)
-  add_test(NAME render COMMAND ky_test_render)
+  ky_add_test(render ky_test_render)
 
   add_executable(ky_test_physics tests/test_physics.c)
   target_link_libraries(ky_test_physics PRIVATE ky_engine)
-  add_test(NAME physics COMMAND ky_test_physics)
+  ky_add_test(physics ky_test_physics)
 
   add_executable(ky_test_script tests/test_script.c)
   target_link_libraries(ky_test_script PRIVATE ky_engine)
-  add_test(NAME script COMMAND ky_test_script)
+  ky_add_test(script ky_test_script)
 
   add_executable(ky_test_pack tests/test_pack.c)
   target_link_libraries(ky_test_pack PRIVATE ky_engine)
-  add_test(NAME pack COMMAND ky_test_pack)
+  ky_add_test(pack ky_test_pack)
 
   add_executable(ky_test_2d tests/test_2d.c)
   target_link_libraries(ky_test_2d PRIVATE ky_engine)
-  add_test(NAME 2d COMMAND ky_test_2d)
+  ky_add_test(2d ky_test_2d)
 
   add_executable(ky_test_hooks tests/test_hooks.c)
   target_link_libraries(ky_test_hooks PRIVATE ky_engine ky_core)
-  add_test(NAME hooks COMMAND ky_test_hooks)
+  ky_add_test(hooks ky_test_hooks)
 
   add_executable(ky_test_event tests/test_event.c)
   target_link_libraries(ky_test_event PRIVATE ky_core)
-  add_test(NAME event COMMAND ky_test_event)
+  ky_add_test(event ky_test_event)
 
   add_executable(ky_test_anti_tamper tests/test_anti_tamper.c)
   target_link_libraries(ky_test_anti_tamper PRIVATE ky_antitamper ${CMAKE_DL_LIBS})
-  add_test(NAME anti_tamper COMMAND ky_test_anti_tamper)
+  ky_add_test(anti_tamper ky_test_anti_tamper)
   add_executable(ky_test_input tests/test_input.c)
   target_link_libraries(ky_test_input PRIVATE ky_core)
-  add_test(NAME input COMMAND ky_test_input)
+  ky_add_test(input ky_test_input)
 
   add_executable(ky_test_demo_loop tests/test_demo_loop.c)
   target_include_directories(ky_test_demo_loop PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/demo)
   target_link_libraries(ky_test_demo_loop PRIVATE ky_platformer ky_engine ky_core)
-  add_test(NAME demo_loop COMMAND ky_test_demo_loop)
+  ky_add_test(demo_loop ky_test_demo_loop)
 
   add_executable(ky_test_resource_flow tests/test_resource_flow.c)
   target_link_libraries(ky_test_resource_flow PRIVATE ky_engine ky_core)
-  add_test(NAME resource_flow COMMAND ky_test_resource_flow)
+  ky_add_test(resource_flow ky_test_resource_flow)
 
   add_executable(ky_test_kyx_bindings tests/test_kyx_bindings.c)
   target_link_libraries(ky_test_kyx_bindings PRIVATE ky_engine ky_core)
-  add_test(NAME kyx_bindings COMMAND ky_test_kyx_bindings)
+  ky_add_test(kyx_bindings ky_test_kyx_bindings)
 
   # Editor core (headless, no ImGui/GLFW dependency)
   add_library(editor_core STATIC tools/editor/src/editor_core.c)
@@ -141,16 +155,20 @@ if(KYR_BUILD_TESTS)
   target_link_libraries(editor_core PUBLIC ky_engine ky_core)
   add_executable(ky_test_editor_world tests/test_editor_world.c)
   target_link_libraries(ky_test_editor_world PRIVATE editor_core ky_engine ky_core)
-  add_test(NAME editor_world COMMAND ky_test_editor_world)
+  ky_add_test(editor_world ky_test_editor_world)
 
   # Scene serialization
   add_executable(ky_test_scene_serialize tests/test_scene_serialize.c)
   target_link_libraries(ky_test_scene_serialize PRIVATE ky_engine ky_core)
-  add_test(NAME scene_serialize COMMAND ky_test_scene_serialize)
+  ky_add_test(scene_serialize ky_test_scene_serialize)
 
   add_executable(ky_test_spritesheet tests/test_spritesheet.c)
   target_link_libraries(ky_test_spritesheet PRIVATE ky_engine ky_core)
-  add_test(NAME spritesheet COMMAND ky_test_spritesheet)
+  ky_add_test(spritesheet ky_test_spritesheet)
+
+  add_executable(ky_test_extreme tests/test_extreme.c)
+  target_link_libraries(ky_test_extreme PRIVATE ky_engine ky_core)
+  ky_add_test(extreme ky_test_extreme)
 
 
 endif()

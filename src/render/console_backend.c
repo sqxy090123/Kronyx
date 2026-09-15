@@ -10,6 +10,11 @@ typedef struct kyConsoleDevice {
     int frame_count;
 } kyConsoleDevice;
 
+typedef struct kyConsoleBuffer {
+    size_t size;
+    void *data;
+} kyConsoleBuffer;
+
 typedef struct kyConsoleCmdList {
     kyRenderDevice *rd;
     int pipeline_id;
@@ -64,22 +69,33 @@ static int console_shader_uniform(void *impl, void *shader, const char *name) {
 
 static void *console_create_buffer(void *impl, size_t size, const void *data, int dynamic) {
     KY_UNUSED(impl);
-    KY_UNUSED(data);
     KY_UNUSED(dynamic);
-    void *buf = malloc(size > 0 ? size : 1);
-    if (buf && data) memcpy(buf, data, size);
-    return buf;
+    kyConsoleBuffer *b = (kyConsoleBuffer *)malloc(sizeof(kyConsoleBuffer));
+    if (!b) return NULL;
+    b->size = size;
+    b->data = malloc(size > 0 ? size : 1);
+    if (!b->data) {
+        free(b);
+        return NULL;
+    }
+    if (data && size > 0) memcpy(b->data, data, size);
+    return b;
 }
 
 static void console_destroy_buffer(void *impl, void *buf) {
     KY_UNUSED(impl);
-    free(buf);
+    kyConsoleBuffer *b = (kyConsoleBuffer *)buf;
+    if (!b) return;
+    free(b->data);
+    free(b);
 }
 
 static int console_update_buffer(void *impl, void *buf, size_t offset, size_t size, const void *data) {
     KY_UNUSED(impl);
-    if (!buf || !data || size == 0) return -1;
-    memcpy((char *)buf + offset, data, size);
+    kyConsoleBuffer *b = (kyConsoleBuffer *)buf;
+    if (!b || !data || size == 0) return -1;
+    if (offset > b->size || size > b->size - offset) return -1;
+    memcpy((char *)b->data + offset, data, size);
     return 0;
 }
 

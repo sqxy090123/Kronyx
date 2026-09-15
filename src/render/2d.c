@@ -167,6 +167,16 @@ typedef struct ky2dCache {
 static ky2dCache g_cache;
 static ky2dContext g_ctx_default = {NULL, NULL, NULL};
 
+static void cache_destroy_with_rd(kyRenderDevice *rd) {
+    if (!rd) return;
+    if (g_cache.white)    ky_rd_destroy_texture(rd, g_cache.white);
+    if (g_cache.vbo)      ky_rd_destroy_buffer(rd, g_cache.vbo);
+    if (g_cache.ibo)      ky_rd_destroy_buffer(rd, g_cache.ibo);
+    if (g_cache.pipeline) ky_rd_destroy_pipeline(rd, g_cache.pipeline);
+    if (g_cache.shader)   ky_rd_destroy_shader(rd, g_cache.shader);
+    memset(&g_cache, 0, sizeof(g_cache));
+}
+
 static void cache_destroy(void) {
     /* Cached resources are owned by their RenderDevice. The device may
      * already be destroyed when we get here (stale pointer), so we only
@@ -554,4 +564,11 @@ int ky2d_render_with(kyRenderDevice *rd, kyWorld *w, kyEntity cam,
     return render_frame(rd, w, c, cam_tr,
                         ct_transform ? ct_transform->type_id : 0,
                         ct_sprite->type_id, ctx);
+}
+
+/* Release GPU resources cached in g_cache for the given device.
+ * Must be called before ky_rd_destroy(rd) if the 2D renderer was used. */
+void ky2d_shutdown(kyRenderDevice *rd) {
+    if (g_cache.rd != rd) return;
+    cache_destroy_with_rd(rd);
 }

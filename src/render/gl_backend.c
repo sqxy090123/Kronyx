@@ -256,6 +256,7 @@ static int gl_update_buffer(void *impl, void *buf, size_t offset, size_t size, c
     kyGLDevice *d = (kyGLDevice *)impl;
     kyGLBuffer *b = (kyGLBuffer *)buf;
     if (!d || !b || !data || size == 0) return -1;
+    if (offset > b->size || size > b->size - offset) return -1;
     glBindBuffer(GL_ARRAY_BUFFER, b->id);
     glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)offset, (GLsizeiptr)size, data);
     return 0;

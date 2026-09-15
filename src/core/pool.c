@@ -64,8 +64,10 @@ void ky_pool_reset(kyPool *p) {
 static int pool_grow(kyPool *p) {
     size_t old_cap = p->cap;
     size_t new_cap = old_cap * KY_POOL_GROW_FACTOR;
+    if (new_cap < old_cap) return 0;
     size_t old_meta = old_cap * sizeof(uint32_t);
     size_t new_meta = new_cap * sizeof(uint32_t);
+    if (new_cap > (SIZE_MAX - new_meta) / p->slot_size) return 0;
     size_t total = new_meta + new_cap * p->slot_size;
     uint8_t *old_raw = (uint8_t *)p->free_list;
     uint8_t *raw = (uint8_t *)ky_mem_alloc(&p->alloc, total);
