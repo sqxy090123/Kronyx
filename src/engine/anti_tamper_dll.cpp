@@ -124,18 +124,22 @@ static int ky_generate_salt(uint8_t *salt, size_t len) {
 
 #elif defined(__APPLE__)
 #include <CommonCrypto/CommonCrypto.h>
+#include <Security/Security.h>
 
 static int ky_hmac_sha256(const uint8_t *key, size_t key_len,
                           const uint8_t *msg, size_t msg_len,
                           uint8_t *out, size_t *out_len) {
-    CCHmac(kCCHmacAlgSHA256, key, key_len, msg, msg_len, out);
-    *out_len = CC_HMAC_SHA256_LENGTH;
+    CCHmacContext ctx;
+    CCHmacInit(&ctx, kCCHmacAlgSHA256, key, key_len);
+    CCHmacUpdate(&ctx, msg, msg_len);
+    CCHmacFinal(&ctx, out);
+    *out_len = HMAC_SIZE; /* SHA-256 固定 32 字节 */
     return 1;
 }
 
 static int ky_generate_salt(uint8_t *salt, size_t len) {
-    CCCryptorStatus status = CCRandomGenerateBytes(salt, (size_t)len);
-    return (status == kCCSuccess) ? 1 : 0;
+    OSStatus status = SecRandomCopyBytes(kSecRandomDefault, (size_t)len, salt);
+    return (status == errSecSuccess) ? 1 : 0;
 }
 
 #else
@@ -244,18 +248,20 @@ static int ky_check_self_integrity(void) {
     uint32_t size = (uint32_t)sizeof(exe_path);
     if (_NSGetExecutablePath(exe_path, &size) != 0) return 0;
 
-    CFURLRef url = CFURLCreateFromFileSystemRepresentation(
-        NULL, (const UInt8 *)exe_path, (CFIndex)strlen(exe_path), false);
-    if (!url) return 0;
+    struct stat st;
+    if (stat(exe_path, &st) != 0) return 0;
 
-    CFMutableDictionaryRef attrs = CFDictionaryCreateMutable(
-        NULL, 0, &kCFTypeDictionaryKeyCallBacks,
-        &kCFTypeDictionaryValueCallBacks);
-    bool result = CFURLReadAttributesAndContents(url, attrs, NULL, NULL);
-    CFRelease(url);
-    CFRelease(attrs);
-    (void)result;
-    return 1;
+    FILE *f = fopen(exe_path, "rb");
+    if (!f) return 0;
+
+    uint8_t magic[4];
+    size_t r = fread(magic, 1, 4, f);
+    fclose(f);
+
+    /* Mach-O magic: 0xfeedface / 0xfeedfacf (64-bit) */
+    return (r == 4 &&
+            (memcmp(magic, "\xCE\xFA\xED\xFE", 4) == 0 ||
+             memcmp(magic, "\xFE\xED\xFA\xCF", 4) == 0)) ? 1 : 0;
 }
 #else
 static int ky_check_self_integrity(void) {

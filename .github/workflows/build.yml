@@ -44,14 +44,22 @@ jobs:
       if: runner.os == 'Windows'
       shell: powershell
       run: |
-        # vcpkg is pre-installed on windows-latest
-        vcpkg install glfw3:x64-windows
-        vcpkg install openssl:x64-windows
-        $vcpkgDir = (Get-Command vcpkg | Select-Object -ExpandProperty Source | Split-Path | Split-Path)
+        # Install vcpkg
+        git clone https://github.com/microsoft/vcpkg.git $env:USERPROFILE\vcpkg
+        cd $env:USERPROFILE\vcpkg
+        .\bootstrap-vcpkg.bat
+        $vcpkgDir = (Get-Location).Path
         "VCPKG_ROOT=$vcpkgDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         "OPENSSL_ROOT_DIR=$vcpkgDir\installed\x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         "VCPKG_TARGET_TRIPLET=x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         Write-Host "vcpkg root: $vcpkgDir"
+
+    - name: Install vcpkg packages (Windows)
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        & "$env:VCPKG_ROOT\vcpkg.exe" install glfw3:x64-windows
+        & "$env:VCPKG_ROOT\vcpkg.exe" install openssl:x64-windows
 
     - name: Configure CMake (Linux/Mac)
       if: runner.os != 'Windows'
