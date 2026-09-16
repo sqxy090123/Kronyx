@@ -243,6 +243,10 @@ static int ky_check_self_integrity(void) {
     return valid;
 }
 #elif defined(__APPLE__)
+#include <sys/stat.h>
+#include <Security/Security.h>
+#include <CommonCrypto/CommonCrypto.h>
+
 static int ky_check_self_integrity(void) {
     char exe_path[MAX_DEVPATH];
     uint32_t size = (uint32_t)sizeof(exe_path);
