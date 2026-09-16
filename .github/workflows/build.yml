@@ -32,17 +32,50 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y libglfw3-dev libglm-dev libx11-dev libxi-dev libxrandr-dev libgl1-mesa-dev
+        sudo apt-get install -y libglfw3-dev libglm-dev libx11-dev libxi-dev libxrandr-dev libgl1-mesa-dev libssl-dev
 
-    - name: Configure CMake
+    - name: Install dependencies (macOS)
+      if: runner.os == 'macOS'
       run: |
-        cmake -S ${{ github.workspace }} -B ${{ github.workspace }}/build -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }} -DKYR_BUILD_TESTS=ON
-        echo "Configure exit code: $?"
+        brew install glfw openssl
+        echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl)" >> "$GITHUB_ENV"
+
+    - name: Install dependencies (Windows)
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        # vcpkg is pre-installed on windows-latest
+        vcpkg install glfw3:x64-windows
+        vcpkg install openssl:x64-windows
+        $vcpkgDir = (Get-Command vcpkg | Select-Object -ExpandProperty Source | Split-Path | Split-Path)
+        "VCPKG_ROOT=$vcpkgDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "OPENSSL_ROOT_DIR=$vcpkgDir\installed\x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "VCPKG_TARGET_TRIPLET=x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        Write-Host "vcpkg root: $vcpkgDir"
+
+    - name: Configure CMake (Linux/Mac)
+      if: runner.os != 'Windows'
+      run: |
+        cmake -S ${{ github.workspace }} -B ${{ github.workspace }}/build \
+          -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }} \
+          -DKYR_BUILD_TESTS=ON \
+          -DCMAKE_PREFIX_PATH="$(brew --prefix openssl 2>/dev/null || echo /usr/local/opt/openssl)"
+
+    - name: Configure CMake (Windows + vcpkg)
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        $toolchain = Join-Path $env:VCPKG_ROOT "scripts\buildsystems\vcpkg.cmake"
+        $buildDir = Join-Path ${{ github.workspace }} "build"
+        cmake -S ${{ github.workspace }} -B $buildDir `
+          -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }} `
+          -DKYR_BUILD_TESTS=ON `
+          -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
+          -DVCPKG_TARGET_TRIPLET=x64-windows
 
     - name: Build
       run: |
-        cmake --build ${{ github.workspace }}/build -j2 2>&1 | tail -50
-        echo "Build exit code: ${PIPESTATUS[0]}"
+        cmake --build ${{ github.workspace }}/build -j2
 
     - name: Run tests
       working-directory: ${{ github.workspace }}/build
