@@ -25,34 +25,30 @@
 #ifndef NT_SUCCESS
 #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
 #endif
-/* Fallbacks for BCrypt functions missing in some Windows SDK versions */
-#ifndef _BCRYPT_HAS_FALLBACKS
-#define _BCRYPT_HAS_FALLBACKS
-#if defined(_MSC_VER) && !defined(BCRYPT_HAS_CALC_HMAC)
-static DWORD ky_bcrypt_calc_hmac_key_size(BCRYPT_ALG_HANDLE hAlg) {
-    DWORD len = 0;
-    BCryptGetProperty(hAlg, BCRYPT_OBJECT_LENGTH, (PUCHAR)&len, sizeof(len), &len, 0);
-    return len ? len : 32;
+/* BCryptCalcHmacKeySize / BCryptGenerateRandomBytes are declared in
+   bcrypt.h on Windows 8+ SDK; on older SDKs (Windows 7) they are missing.
+   Provide compatible fallbacks using only guaranteed APIs. */
+static DWORD ky_bcrypt_key_size(const BCRYPT_ALG_HANDLE hAlg) {
+    DWORD objLen = 0;
+    BCryptGetProperty(hAlg, BCRYPT_OBJECT_LENGTH, (PUCHAR)&objLen,
+                      sizeof(objLen), &objLen, 0);
+    return objLen ? objLen : 32;
 }
-#define BCryptCalcHmacKeySize ky_bcrypt_calc_hmac_key_size
-#endif
-#if defined(_MSC_VER) && !defined(BCRYPT_HAS_GEN_RANDOM)
-static NTSTATUS ky_bcrypt_gen_random(BCRYPT_ALG_HANDLE hAlg, PUCHAR buf, ULONG len) {
-    if (hAlg) return BCryptGenerateSymmetricKey(hAlg, buf, len, 0);
+static NTSTATUS ky_bcrypt_random(BCRYPT_ALG_HANDLE hAlg,
+                                 PUCHAR buf, ULONG len) {
+    (void)hAlg;
     HCRYPTPROV prov = 0;
-    if (!CryptAcquireContext(&prov, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
+    if (!CryptAcquireContext(&prov, NULL, NULL,
+                            PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
         return (NTSTATUS)E_FAIL;
-    if (!CryptGenRandom(prov, len, buf)) {
-        CryptReleaseContext(prov, 0);
-        return (NTSTATUS)E_FAIL;
-    }
+    BOOL ok = CryptGenRandom(prov, len, buf);
     CryptReleaseContext(prov, 0);
-    return 0;
+    return ok ? 0 : (NTSTATUS)E_FAIL;
 }
-#define BCryptGenerateRandomBytes ky_bcrypt_gen_random
-#endif
-#endif
+#define BCryptCalcHmacKeySize(hAlg)   ky_bcrypt_key_size((hAlg))
+#define BCryptGenerateRandomBytes(h,b,l) ky_bcrypt_random((h),(b),(l))
 #pragma comment(lib, "bcrypt.lib")
+#pragma comment(lib, "crypt32.lib")
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
 #include <Security/Security.h>
