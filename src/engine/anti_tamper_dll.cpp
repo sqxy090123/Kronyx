@@ -17,13 +17,40 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <wincrypt.h>
 #include <bcrypt.h>
-#include <winternl.h>
 #ifndef BCRYPT_RANDOM_ALGORITHM
 #define BCRYPT_RANDOM_ALGORITHM L"RANDOM"
 #endif
 #ifndef NT_SUCCESS
 #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
+#endif
+/* Fallbacks for BCrypt functions missing in some Windows SDK versions */
+#ifndef _BCRYPT_HAS_FALLBACKS
+#define _BCRYPT_HAS_FALLBACKS
+#if defined(_MSC_VER) && !defined(BCRYPT_HAS_CALC_HMAC)
+static DWORD ky_bcrypt_calc_hmac_key_size(BCRYPT_ALG_HANDLE hAlg) {
+    DWORD len = 0;
+    BCryptGetProperty(hAlg, BCRYPT_OBJECT_LENGTH, (PUCHAR)&len, sizeof(len), &len, 0);
+    return len ? len : 32;
+}
+#define BCryptCalcHmacKeySize ky_bcrypt_calc_hmac_key_size
+#endif
+#if defined(_MSC_VER) && !defined(BCRYPT_HAS_GEN_RANDOM)
+static NTSTATUS ky_bcrypt_gen_random(BCRYPT_ALG_HANDLE hAlg, PUCHAR buf, ULONG len) {
+    if (hAlg) return BCryptGenerateSymmetricKey(hAlg, buf, len, 0);
+    HCRYPTPROV prov = 0;
+    if (!CryptAcquireContext(&prov, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
+        return (NTSTATUS)E_FAIL;
+    if (!CryptGenRandom(prov, len, buf)) {
+        CryptReleaseContext(prov, 0);
+        return (NTSTATUS)E_FAIL;
+    }
+    CryptReleaseContext(prov, 0);
+    return 0;
+}
+#define BCryptGenerateRandomBytes ky_bcrypt_gen_random
+#endif
 #endif
 #pragma comment(lib, "bcrypt.lib")
 #elif defined(__APPLE__)
