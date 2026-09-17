@@ -199,10 +199,10 @@ target_include_directories(ky_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
 target_link_libraries(ky_runtime PUBLIC ky_core)
 
 if(WIN32)
-  # vcpkg 提供 find_package(glfw3 CONFIG)，通过 toolchain 自动查找
+  # vcpkg 提供 find_package(glfw3 CONFIG)，target 名为 glfw
   find_package(glfw3 CONFIG QUIET)
   if(glfw3_FOUND)
-    target_link_libraries(ky_runtime PUBLIC glfw3)
+    target_link_libraries(ky_runtime PUBLIC glfw)
     message(STATUS "Kronyx: GLFW3 found via vcpkg")
   else()
     message(WARNING "Kronyx: GLFW3 not found, ky_runtime will be stub")

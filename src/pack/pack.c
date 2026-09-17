@@ -4,7 +4,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#define mkdir _mkdir
+#define getpid _getpid
+#else
 #include <unistd.h>
+#endif
+#endif
 
 #ifndef KY_PACK_ENGINE_ROOT
 #define KY_PACK_ENGINE_ROOT "."
