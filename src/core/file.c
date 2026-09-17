@@ -3,8 +3,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <errno.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#include <sys/stat.h>
+#define S_ISREG(m) (((m) & _S_IFMT) == _S_IFREG)
+#else
+#include <sys/stat.h>
+#endif
 
 static int is_regular_file(const char *path, long *size_out) {
     struct stat st;

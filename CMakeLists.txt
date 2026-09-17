@@ -245,6 +245,7 @@ target_compile_definitions(KyAntiTamper PRIVATE KY_ANTITEMPER_BUILDING_LIB)
 target_include_directories(KyAntiTamper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 if(WIN32)
   target_link_libraries(KyAntiTamper PRIVATE crypt32)
+  target_compile_definitions(KyAntiTamper PRIVATE WIN32)
   set_target_properties(KyAntiTamper PROPERTIES
     OUTPUT_NAME "KyAntiTamper"
     SUFFIX ".dll"

@@ -15,11 +15,15 @@
 
 #include "kronyx/anti_tamper.h"
 
-#ifdef WIN32
+#ifdef _WIN32
 #include <windows.h>
 #include <bcrypt.h>
+#include <winternl.h>
 #ifndef BCRYPT_RANDOM_ALGORITHM
 #define BCRYPT_RANDOM_ALGORITHM L"RANDOM"
+#endif
+#ifndef NT_SUCCESS
+#define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
 #endif
 #pragma comment(lib, "bcrypt.lib")
 #elif defined(__APPLE__)
