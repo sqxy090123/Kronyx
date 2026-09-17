@@ -223,8 +223,9 @@ target_include_directories(ky_antitamper PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/incl
 target_link_libraries(ky_antitamper PUBLIC ky_core)
 if(WIN32)
   target_link_libraries(ky_antitamper PRIVATE crypt32)
+  target_compile_definitions(ky_antitamper PUBLIC KY_ANTITEMPER_BUILDING_LIB)
 elseif(APPLE)
-  target_link_libraries(ky_antitamper PRIVATE "-framework Security" "-framework CoreFoundation" "-framework CommonCrypto")
+  target_link_libraries(ky_antitamper PRIVATE "-framework Security" "-framework CoreFoundation")
   set_target_properties(ky_antitamper PROPERTIES POSITION_INDEPENDENT_CODE ON)
 else()
   target_link_libraries(ky_antitamper PRIVATE ${CMAKE_DL_LIBS})
@@ -249,7 +250,7 @@ if(WIN32)
     SUFFIX ".dll"
   )
 elseif(APPLE)
-  target_link_libraries(KyAntiTamper PRIVATE "-framework Security" "-framework CoreFoundation" "-framework CommonCrypto")
+  target_link_libraries(KyAntiTamper PRIVATE "-framework Security" "-framework CoreFoundation")
   set_target_properties(KyAntiTamper PROPERTIES
     OUTPUT_NAME "KyAntiTamper"
     SUFFIX ".dylib"
