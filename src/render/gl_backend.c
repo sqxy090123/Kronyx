@@ -458,6 +458,13 @@ static void gl_destroy_shader(void *impl, void *shader) {
     free(shader);
 }
 
+static int gl_shader_uniform(void *impl, void *shader, const char *name) {
+    KY_UNUSED(impl);
+    KY_UNUSED(shader);
+    KY_UNUSED(name);
+    return -1;
+}
+
 static void *gl_create_buffer(void *impl, size_t size, const void *data, int dynamic) {
     KY_UNUSED(impl);
     KY_UNUSED(size);
@@ -469,6 +476,15 @@ static void *gl_create_buffer(void *impl, size_t size, const void *data, int dyn
 static void gl_destroy_buffer(void *impl, void *buf) {
     KY_UNUSED(impl);
     free(buf);
+}
+
+static int gl_update_buffer(void *impl, void *buf, size_t offset, size_t size, const void *data) {
+    KY_UNUSED(impl);
+    KY_UNUSED(buf);
+    KY_UNUSED(offset);
+    KY_UNUSED(size);
+    KY_UNUSED(data);
+    return 0;
 }
 
 static void *gl_create_texture(void *impl, int w, int h, int ch, const void *px) {

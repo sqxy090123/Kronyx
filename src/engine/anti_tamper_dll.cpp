@@ -18,6 +18,9 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <bcrypt.h>
+#ifndef BCRYPT_RANDOM_ALGORITHM
+#define BCRYPT_RANDOM_ALGORITHM L"RANDOM"
+#endif
 #pragma comment(lib, "bcrypt.lib")
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
