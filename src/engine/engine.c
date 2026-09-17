@@ -36,7 +36,7 @@ int ky_engine_init(int width, int height, const char *title) {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
-    GLFWwindow *win = glfwCreateWindow(width, height, title ?: "Kronyx", NULL, NULL);
+    GLFWwindow *win = glfwCreateWindow(width, height, title ? title : "Kronyx", NULL, NULL);
     if (!win) {
         KY_LOG_ERROR("glfwCreateWindow failed");
         glfwTerminate();

@@ -15,7 +15,7 @@
 
 #include "kronyx/anti_tamper.h"
 
-#ifdef _WIN32
+#ifdef WIN32
 #include <windows.h>
 #include <bcrypt.h>
 #ifndef BCRYPT_RANDOM_ALGORITHM

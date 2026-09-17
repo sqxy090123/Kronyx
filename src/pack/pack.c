@@ -7,7 +7,9 @@
 
 #ifdef _WIN32
 #include <direct.h>
-#define mkdir _mkdir
+#include <process.h>
+static int ky_mkdir(const char *p, int m) { (void)m; return _mkdir(p); }
+#define mkdir ky_mkdir
 #define getpid _getpid
 #else
 #include <unistd.h>
