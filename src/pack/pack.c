@@ -12,7 +12,6 @@
 #else
 #include <unistd.h>
 #endif
-#endif
 
 #ifndef KY_PACK_ENGINE_ROOT
 #define KY_PACK_ENGINE_ROOT "."
