@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 /* Forward decl: kyVM layout with gc field added */
 /* The real struct is in vm.c; we need to extend it there. */

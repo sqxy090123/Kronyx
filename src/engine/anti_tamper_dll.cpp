@@ -46,7 +46,7 @@ static NTSTATUS ky_bcrypt_gen_random_bytes(BCRYPT_ALG_HANDLE hAlg,
         return (NTSTATUS)E_FAIL;
     BOOL ok = CryptGenRandom(hProv, len, buf);
     CryptReleaseContext(hProv, 0);
-    return ok ? STATUS_SUCCESS : (NTSTATUS)E_FAIL;
+    return ok ? 0 : (NTSTATUS)E_FAIL;
 }
 #define BCryptCalcHmacKeySize(hAlg)  ky_bcrypt_get_key_size((hAlg))
 #define BCryptGenerateRandomBytes(a,b,l) ky_bcrypt_gen_random_bytes((a),(b),(l))
