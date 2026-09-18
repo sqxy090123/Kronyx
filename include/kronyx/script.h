@@ -19,12 +19,14 @@
 #define KYX_MAX_CALLS    256
 #define KYX_REG_COUNT    32
 #define KYX_STACK_SIZE   256
+#define KY_MAX_GC_ROOTS  256
 
 typedef struct kyVM kyVM;
 typedef struct kyLexer kyLexer;
 typedef struct kyParser kyParser;
 typedef struct kyAstNode kyAstNode;
 typedef struct kyProto kyProto;
+typedef struct kyClosure kyClosure;
 
 typedef enum kyValType {
     KYT_NIL = 0, KYT_BOOL, KYT_INT, KYT_FLOAT, KYT_STRING,
@@ -121,5 +123,7 @@ KY_API void    ky_vm_set_import_root(kyVM *vm, const char *dir);
 
 /* Compiler: AST → bytecode */
 KY_API kyProto *kyx_compile(kyVM *vm, kyAstNode *root, char *err_buf, int err_buf_size);
+
+#include "kronyx/gc.h"
 
 #endif

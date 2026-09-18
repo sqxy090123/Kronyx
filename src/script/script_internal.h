@@ -1,6 +1,9 @@
 #pragma once
 #include "kronyx/script.h"
+#include "kronyx/gc.h"
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 typedef struct kyLexer {
     const char    *src;
@@ -92,3 +95,55 @@ typedef struct kyParser {
     int            error_count;
     char           error_msg[256];
 } kyParser;
+
+/* VM-internal types needed by script_internal.h kyVM definition */
+typedef struct kyProto {
+    int       *code;
+    int        code_count;
+    int        code_cap;
+    double    *constants;
+    int        const_count;
+    int        const_cap;
+    char     **strings;
+    int        str_count;
+    int        str_cap;
+    int        param_count;
+    char      *name;
+} kyProto;
+
+typedef struct kyClosure {
+    kyProto   *proto;
+} kyClosure;
+
+/* VM struct definition — moved here so gc.c can access vm->gc fields */
+#define KY_MAX_STACK  512
+#define KY_MAX_VARS   1024
+#define KY_MAX_CALL_DEPTH 256
+
+typedef struct kyNativeEntry {
+    kyValue (*fn)(struct kyVM *, kyValue *args, int argc, void *user);
+    void    *user;
+    char     ns[64];
+    char     name[64];
+} kyNativeEntry;
+
+struct kyVM {
+    kyValue   stack[KY_MAX_STACK];
+    char     *gvar_names[KY_MAX_VARS];
+    kyValue   gvar_vals[KY_MAX_VARS];
+    int       gvar_count;
+    int       top_ran;
+    kyProto   protos[KYX_MAX_PROTOS];
+    kyClosure *closures[KYX_MAX_PROTOS];
+    kyNativeEntry natives[KYX_MAX_REGISTRY];
+    int       stack_top;
+    int       call_depth;
+    int       proto_count;
+    int       native_count;
+    char      error_msg[256];
+    /* GC fields */
+    KyGcHeap  gc;
+    void     *gc_roots[KY_MAX_GC_ROOTS];
+    int       gc_root_count;
+    int       gc_collect_requested;
+};

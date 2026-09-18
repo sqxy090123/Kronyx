@@ -59,6 +59,7 @@ add_library(ky_engine STATIC
   src/script/script.c
   src/script/parser.c
   src/script/vm.c
+  src/script/gc.c
   src/script/bindings.c
   src/pack/pack.c
 )
@@ -148,6 +149,10 @@ if(KYR_BUILD_TESTS)
   add_executable(ky_test_kyx_bindings tests/test_kyx_bindings.c)
   target_link_libraries(ky_test_kyx_bindings PRIVATE ky_engine ky_core)
   ky_add_test(kyx_bindings ky_test_kyx_bindings)
+
+  add_executable(ky_test_kyx_gc tests/test_kyx_gc.c)
+  target_link_libraries(ky_test_kyx_gc PRIVATE ky_engine ky_core)
+  ky_add_test(kyx_gc ky_test_kyx_gc)
 
   # Editor core (headless, no ImGui/GLFW dependency)
   add_library(editor_core STATIC tools/editor/src/editor_core.c)

@@ -13,3 +13,4 @@ cache/
 __pycache__/
 *.pyc
 build_asan/
+Testing/

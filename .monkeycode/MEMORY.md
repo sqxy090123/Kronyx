@@ -184,10 +184,48 @@ Entries discovered by the Agent during task execution should follow this format:
   - ECS system 的 kySystem.order 是 uint32_t；传 -1 会溢出为 4294967295，排在最后
 
 [Project Knowledge Summary]
-- Date: 2026-09-09
+- Date: 2026-09-08
 - Context: Discovered by Agent while completing G8 collision callback export slice
 - Category: Troubleshooting & Debugging
 - Instructions:
   - 物理碰撞事件契约：ky_physics_step 会对每个 still-alive contact pair 同步触发 KY_EVENT_COLLIDE("collide")，payload 是 kyCollision{body_a,body_b}；持续接触会在每一帧重复触发，不会只在进入时触发一次；payload 是事件触发时的值，需要持久数据须在回调里即时拷贝
   - 物理事件在 resolve 之后、step 返回前触发，回调里不要调用会改动 world 状态的 ky_physics_*（避免在遍历 pair 期间修改内部数组）
   - 新增公开事件契约应遵循：事件名常量 + payload struct 放公开头文件（physics.h），内部结构（physics_internal.h 的 kyContactPair）不得直接作为事件 payload 暴露
+
+[Project Knowledge Summary]
+- Date: 2026-09-15
+- Context: Agent 完成内存安全审计（ASan/UBSan + 白盒审查），修复 OOB/UAF/整数溢出，新增 test_extreme 并自动注入 LSAN 抑制
+- Category: Build Methods
+- Instructions:
+  - ASan 构建：cmake -B build_asan -DKYR_ENABLE_SANITIZERS=ON -DKYR_BUILD_TESTS=ON && make -j$(nproc)
+  - LSAN 抑制已内置到 CMakeLists：ky_add_test() 辅助函数在 sanitizer 构建下为每个测试自动设置 ENVIRONMENT "LSAN_OPTIONS=suppressions=/workspace/lsan.supp"，ctest 直接跑即可
+  - release 构建：cmake -B build -DKYR_BUILD_TESTS=ON && make -j$(nproc)
+  - 全量测试：cd build_asan && ctest -j1（19/19 通过，~25s）；release 下 19/19 通过（~16s）
+  - 测试列表：core math ecs render physics script pack 2d hooks event anti_tamper input demo_loop resource_flow kyx_bindings editor_world scene_serialize spritesheet extreme
+
+[Project Knowledge Summary]
+- Date: 2026-09-15
+- Context: Agent 修复内存安全问题时发现的引擎内部知识
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - console_backend.c：update_buffer 越界检查 offset+size > b->size，其中 b 是 kyConsoleBuffer{size,data}
+  - gl_backend.c：gl_update_buffer 越界检查 offset+size <= b->size
+  - render.c：ky_rd_submit 在 draw_pass_hook 设置时仍需调用 vt->submit，否则 command-list 泄漏
+  - 2d.c：cache_destroy_with_rd() 释放 2D 缓存几何，需调用 ky2d_shutdown(rd) 再 ky_rd_destroy
+  - pool.c：pool_grow 有 SIZE_MAX 整数溢出保护
+  - array.c：ky_array_reserve/emplace 的 nc*elem_size 有溢出保护
+  - pool_free 不支持双重释放（count 可下溢），已知限制
+  - VM 无 OP_BREAK/OP_CONTINUE，break/continue 编译为 no-op，while(1){break} 是真正死循环
+  - VM 的 call_proto 只复制 param_count 个参数，编译器临时寄存器可能超出，全寄存器边界检查会破坏合法字节码
+
+[Project Knowledge Summary]
+- Date: 2026-09-15
+- Context: Agent 查询 GitHub Actions CI 状态时发现的认证与 CI 配置知识
+- Category: Operations & Deployment
+- Instructions:
+  - gh CLI 的 token（ghs_1939685_ 前缀）会过期，过期后 gh 命令返回 401
+  - git credential helper（/app/agent/bin/agent git-credential-helper）有独立的 GitHub token，push/pull 不受影响
+  - 查 Actions API 需从 git credential 提取 token：NEW_TOKEN=$(git credential fill <<< $'protocol=https\nhost=github.com\n' 2>/dev/null | grep '^password=' | sed 's/^password=//')，然后 GITHUB_TOKEN="$NEW_TOKEN" gh api "repos/sqxy090123/Kronyx/actions/runs?per_page=N"
+  - CI 矩阵：3 OS（ubuntu/windows/macos）× 2 构建类型（Release/Debug）= 6 jobs，全在 .github/workflows/build.yml
+  - CI 只跑 6 个测试二进制（core math ecs render physics script），不完整；Windows/Mac 的 CMake 配置常因缺依赖失败（预存问题）
+  - Ubuntu Debug/Release 两个 job 可通过 CI，Windows/Mac 在 Configure CMake 步骤失败

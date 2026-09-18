@@ -1,4 +1,5 @@
 #include "kronyx/script.h"
+#include "kronyx/gc.h"
 #include "script_internal.h"
 #include <stdlib.h>
 #include <string.h>
@@ -10,7 +11,7 @@ typedef enum kyOpCode {
     OP_MOVE     = 5, OP_ADD,      OP_SUB,      OP_MUL,      OP_DIV,
     OP_MOD,      OP_NEG,          OP_NOT,      OP_BNOT,     OP_EQ,
     OP_NEQ,      OP_LT,           OP_LE,       OP_GT,       OP_GE,
-    OP_AND,      OP_OR,           OP_CONCAT,   OP_BAND = 22, OP_BOR,  OP_BXOR,
+    OP_AND,      OP_OR,                  OP_BAND = 22, OP_BOR,  OP_BXOR,
     OP_BSHL,     OP_BSHR,         OP_NEWARRAY = 27, OP_LOADSTRING = 28,
     OP_GETFIELD = 30,              OP_SETFIELD, OP_GETINDEX, OP_SETINDEX,
     OP_GETGLOBAL = 32,              OP_SETGLOBAL,
@@ -18,66 +19,20 @@ typedef enum kyOpCode {
     OP_JUMP     = 50,              OP_JMPIF,   OP_JMPIFNOT,
     OP_INVOKE   = 60,              OP_NATIVECALL,
     OP_EXIT,
+    /* GC ops (80+) */
+    OP_NEWHDR   = 80,  /* A=dest, B=byte_len */
+    OP_NEWWSTR  = 81,  /* A=dest, B=const_idx, C=const_idx2 (concat two pool strings into heap str) */
+    OP_HEAPSTR  = 82,  /* A=dest, B=str_reg, C=str_reg2 (heap string concat from two registers) */
+    OP_HEAPARR  = 83,  /* A=dest, B=elem_count (alloc kyValue array in GC heap) */
+    OP_HEAPCLO  = 84,  /* A=dest, B=proto_idx, C=upval_count (alloc closure+captured upvals) */
+    OP_CONCAT   = 85,  /* A=dest, B=str_reg, C=str_reg2 (GC-heap string concat) */
 } kyOpCode;
-
-typedef struct kyInstr {
-    kyOpCode op;
-    int A, B, C;
-} kyInstr;
-
-typedef struct kyProto {
-    int       *code;
-    int        code_count;
-    int        code_cap;
-    double    *constants;
-    int        const_count;
-    int        const_cap;
-    char     **strings;
-    int        str_count;
-    int        str_cap;
-    
-    int        param_count;
-    char     *name;
-} kyProto;
-
-typedef struct kyClosure {
-    kyProto   *proto;
-} kyClosure;
-
-
-typedef struct kyNativeEntry {
-    kyValue (*fn)(struct kyVM *, kyValue *args, int argc, void *user);
-    void    *user;
-    char     ns[64];
-    char     name[64];
-} kyNativeEntry;
-
-#define KY_MAX_STACK 512
-#define KY_MAX_VARS  1024
-#define KY_MAX_CALL_DEPTH 256
 
 
 #define KY_MAX_PROTOS KYX_MAX_PROTOS
 #define KY_MAX_REGISTRY KYX_MAX_REGISTRY
 
 
-
-typedef struct kyVM kyVM;
-struct kyVM {
-    kyValue   stack[KY_MAX_STACK];
-    char     *gvar_names[KY_MAX_VARS];
-    kyValue   gvar_vals[KY_MAX_VARS];
-    int       gvar_count;
-    int       top_ran;
-    kyProto   protos[KYX_MAX_PROTOS];
-    kyClosure *closures[KYX_MAX_PROTOS];
-    kyNativeEntry natives[KYX_MAX_REGISTRY];
-    int       stack_top;
-    int       call_depth;
-    int       proto_count;
-    int       native_count;
-    char      error_msg[256];
-};
 
 static kyValue nil_val(void) {
     kyValue v; memset(&v, 0, sizeof(v)); v.type = KYT_NIL; return v;
@@ -155,6 +110,15 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
         vm->stack[base + i] = args[i];
     }
     while (pc + 4 <= proto->code_count) {
+        /* Safe point: run GC if requested or threshold exceeded */
+        if (vm->gc_collect_requested) {
+            ky_gc_run_full(vm);
+            vm->gc_collect_requested = 0;
+        }
+        if (!vm->gc.auto_disabled && !vm->gc.gc_suppressed &&
+            vm->gc.nursery_used >= vm->gc.nursery_trigger) {
+            ky_gc_run_nursery(vm);
+        }
         int opcode = proto->code[pc];
         int A = proto->code[pc + 1];
         int B = proto->code[pc + 2];
@@ -185,6 +149,23 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                 vm->stack[base + A] = vm->stack[base + B];
                 break;
             case OP_ADD: case OP_SUB: case OP_MUL: {
+                if (opcode == OP_ADD) {
+                    kyValue lb = vm->stack[base + B], lc = vm->stack[base + C];
+                    if (lb.type == KYT_STRING && lc.type == KYT_STRING) {
+                        /* string concat: alloc in GC heap */
+                        size_t l1 = strlen(lb.as.sval), l2 = strlen(lc.as.sval);
+                        char *buf = (char *)ky_gc_heap_alloc(vm, KY_GC_OBJ_STRING,
+                                                             (uint32_t)(l1 + l2 + 1));
+                        if (buf) {
+                            memcpy(buf, lb.as.sval, l1);
+                            memcpy(buf + l1, lc.as.sval, l2 + 1);
+                            vm->stack[base + A] = (kyValue){KYT_STRING, .as.sval = buf};
+                        } else {
+                            vm->stack[base + A] = nil_val();
+                        }
+                        break;
+                    }
+                }
                 double x = to_float(vm->stack[base + B]), y = to_float(vm->stack[base + C]);
                 vm->stack[base + A] = float_val(opcode == OP_ADD ? x + y :
                                                 opcode == OP_SUB ? x - y : x * y);
@@ -336,6 +317,12 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                 const char *name = proto_str(proto, B);
                 if (!name) break;
                 kyValue v = vm->stack[base + A];
+                /* Write barrier: log old->new edges for GC */
+                if (v.type == KYT_STRING && ky_gc_is_gc_str(vm, v.as.sval)) {
+                    if (ky_gc_obj_in_gen((const uint8_t *)v.as.sval, vm->gc.nursery, vm->gc.nursery_size)) {
+                        ky_gc_barrier_append(vm, (uint8_t *)v.as.sval);
+                    }
+                }
                 int found = 0;
                 for (int i = 0; i < vm->gvar_count && !found; i++) {
                     if (strcmp(vm->gvar_names[i], name) == 0) {
@@ -373,6 +360,98 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                 }
                 break;
             }
+            /* ---- GC ops ---- */
+            case OP_NEWHDR: {
+                /* A=dest, B=byte_len: allocate opaque block in GC heap */
+                uint32_t len = (uint32_t)B;
+                void *p = ky_gc_heap_alloc(vm, KY_GC_OBJ_HEADER, len);
+                if (p)
+                    vm->stack[base + A] = (kyValue){KYT_ARRAY, .as.arr = p};
+                else
+                    vm->stack[base + A] = nil_val();
+                break;
+            }
+            case OP_NEWWSTR: {
+                /* A=dest, B=const_idx1, C=const_idx2: concat two pool strings into heap str */
+                const char *s1 = proto_str(proto, B);
+                const char *s2 = proto_str(proto, C);
+                const char *a1 = s1 ? s1 : "";
+                const char *a2 = s2 ? s2 : "";
+                size_t l1 = strlen(a1), l2 = strlen(a2);
+                char *buf = (char *)ky_gc_heap_alloc(vm, KY_GC_OBJ_STRING, (uint32_t)(l1 + l2 + 1));
+                if (buf) {
+                    memcpy(buf, a1, l1);
+                    memcpy(buf + l1, a2, l2 + 1);
+                    vm->stack[base + A] = (kyValue){KYT_STRING, .as.sval = buf};
+                } else {
+                    vm->stack[base + A] = nil_val();
+                }
+                break;
+            }
+            case OP_HEAPSTR: {
+                /* A=dest, B=str_reg, C=str_reg2: concat two registers into heap str */
+                kyValue a = vm->stack[base + B];
+                kyValue b = vm->stack[base + C];
+                const char *sa = (a.type == KYT_STRING) ? a.as.sval : "";
+                const char *sb = (b.type == KYT_STRING) ? b.as.sval : "";
+                size_t la = strlen(sa), lb = strlen(sb);
+                char *buf = (char *)ky_gc_heap_alloc(vm, KY_GC_OBJ_STRING, (uint32_t)(la + lb + 1));
+                if (buf) {
+                    memcpy(buf, sa, la);
+                    memcpy(buf + la, sb, lb + 1);
+                    vm->stack[base + A] = (kyValue){KYT_STRING, .as.sval = buf};
+                } else {
+                    vm->stack[base + A] = nil_val();
+                }
+                break;
+            }
+            case OP_HEAPARR: {
+                /* A=dest, B=elem_count: alloc kyValue array in GC heap */
+                uint32_t n = (uint32_t)B;
+                size_t sz = n * sizeof(kyValue);
+                void *p = ky_gc_heap_alloc(vm, KY_GC_OBJ_ARRAY, (uint32_t)(sz > 0 ? sz : 16));
+                if (p) {
+                    memset(p, 0, sz > 0 ? sz : 16);
+                    vm->stack[base + A] = (kyValue){KYT_ARRAY, .as.arr = p};
+                } else {
+                    vm->stack[base + A] = nil_val();
+                }
+                break;
+            }
+            case OP_HEAPCLO: {
+                /* A=dest, B=proto_idx, C=upval_count: alloc closure in GC heap */
+                /* Layout: kyClosure struct + upvals region */
+                uint32_t upvals = (uint32_t)C;
+                uint32_t hdr_sz = (uint32_t)sizeof(kyClosure);
+                size_t total = hdr_sz + upvals * sizeof(kyValue);
+                void *p = ky_gc_heap_alloc(vm, KY_GC_OBJ_CLOSURE, (uint32_t)total);
+                if (p) {
+                    memset(p, 0, total);
+                    kyClosure *cl = (kyClosure *)p;
+                    if (B < vm->proto_count) cl->proto = &vm->protos[B];
+                    vm->stack[base + A] = (kyValue){KYT_FUNCTION, .as.closure = p};
+                } else {
+                    vm->stack[base + A] = nil_val();
+                }
+                break;
+            }
+            case OP_CONCAT: {
+                /* A=dest, B=str_reg, C=str_reg2: heap string concat from two registers */
+                kyValue a = vm->stack[base + B];
+                kyValue b = vm->stack[base + C];
+                const char *sa = (a.type == KYT_STRING) ? a.as.sval : "";
+                const char *sb = (b.type == KYT_STRING) ? b.as.sval : "";
+                size_t la = strlen(sa), lb = strlen(sb);
+                char *buf = (char *)ky_gc_heap_alloc(vm, KY_GC_OBJ_STRING, (uint32_t)(la + lb + 1));
+                if (buf) {
+                    memcpy(buf, sa, la);
+                    memcpy(buf + la, sb, lb + 1);
+                    vm->stack[base + A] = (kyValue){KYT_STRING, .as.sval = buf};
+                } else {
+                    vm->stack[base + A] = nil_val();
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -384,7 +463,10 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
 
 kyVM *ky_vm_create(const void *info) {
     KY_UNUSED(info);
-    return (kyVM *)calloc(1, sizeof(kyVM));
+    kyVM *vm = (kyVM *)calloc(1, sizeof(kyVM));
+    if (!vm) return NULL;
+    ky_gc_heap_init(vm, 0, 0); /* defaults */
+    return vm;
 }
 
 void ky_vm_destroy(kyVM *vm) {
@@ -400,6 +482,7 @@ void ky_vm_destroy(kyVM *vm) {
         }
         for (int i = 0; i < vm->gvar_count; i++)
             free(vm->gvar_names[i]);
+        ky_gc_heap_free(vm);
         free(vm);
     }
 }
