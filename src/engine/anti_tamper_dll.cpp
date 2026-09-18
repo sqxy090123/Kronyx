@@ -28,9 +28,8 @@
 #pragma comment(lib, "bcrypt.lib")
 #pragma comment(lib, "crypt32.lib")
 /* BCryptCalcHmacKeySize and BCryptGenerateRandomBytes are not declared in
-   some Windows SDK versions. Use a fallback that avoids those two symbols
-   entirely by deriving the key size from BCRYPT_HASH_LENGTH and using
-   CryptGenRandom for the salt. */
+   some Windows SDK versions. Use BCRYPT_OBJECT_LENGTH for key size and
+   CryptGenRandom for the salt, avoiding BCRYPT_BUFFER entirely. */
 static DWORD ky_bcrypt_get_key_size(BCRYPT_ALG_HANDLE hAlg) {
     DWORD objLen = 0;
     if (NT_SUCCESS(BCryptGetProperty(hAlg, BCRYPT_OBJECT_LENGTH,
@@ -40,21 +39,14 @@ static DWORD ky_bcrypt_get_key_size(BCRYPT_ALG_HANDLE hAlg) {
 }
 static NTSTATUS ky_bcrypt_gen_random_bytes(BCRYPT_ALG_HANDLE hAlg,
                                            PUCHAR buf, ULONG len) {
-    if (hAlg) {
-        BCRYPT_BUFFER bufDesc;
-        ZeroMemory(&bufDesc, sizeof(bufDesc));
-        bufDesc.dwBufferLen = len;
-        bufDesc.pBuffer = buf;
-        return BCryptEncrypt(hAlg, buf, len, NULL, NULL, 0, &bufDesc, len,
-                             BCRYPT_BLOCKCHAINING);
-    }
+    (void)hAlg;
     HCRYPTPROV hProv = 0;
     if (!CryptAcquireContext(&hProv, NULL, NULL,
                              PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
         return (NTSTATUS)E_FAIL;
     BOOL ok = CryptGenRandom(hProv, len, buf);
     CryptReleaseContext(hProv, 0);
-    return ok ? 0 : (NTSTATUS)E_FAIL;
+    return ok ? STATUS_SUCCESS : (NTSTATUS)E_FAIL;
 }
 #define BCryptCalcHmacKeySize(hAlg)  ky_bcrypt_get_key_size((hAlg))
 #define BCryptGenerateRandomBytes(a,b,l) ky_bcrypt_gen_random_bytes((a),(b),(l))

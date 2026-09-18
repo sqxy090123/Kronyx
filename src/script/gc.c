@@ -13,9 +13,16 @@
  * Timing helper
  * --------------------------------------------------------------------------- */
 static int64_t now_ms(void) {
+#ifdef _WIN32
+    LARGE_INTEGER freq, cnt;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&cnt);
+    return (int64_t)cnt.QuadPart * 1000 / freq.QuadPart;
+#else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+#endif
 }
 
 /* ---------------------------------------------------------------------------
