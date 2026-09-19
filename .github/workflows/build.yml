@@ -90,23 +90,54 @@ jobs:
       shell: bash
       run: |
         set -x
-        echo "=== Checking test executables ==="
-        ls -la ky_test_* 2>&1 || echo "No ky_test_* files found"
-        echo "=== Running individual tests ==="
-        for test in ky_test_core ky_test_math ky_test_ecs ky_test_render ky_test_physics ky_test_script; do
-          if [ -f "$test" ]; then
-            echo "Running $test..."
-            ./$test
-            result=$?
-            echo "$test exit code: $result"
-            if [ $result -ne 0 ]; then
-              echo "FAILED: $test"
-              exit $result
-            fi
-          else
-            echo "NOT FOUND: $test"
+        # Windows builds produce .exe; detect suffix so `./$test` and `"$test"` both work.
+        if ls ky_test_core.exe >/dev/null 2>&1; then SFX=".exe"; else SFX=""; fi
+        echo "=== Test binary suffix: '${SFX}' ==="
+
+        tests=(
+          ky_test_core
+          ky_test_math
+          ky_test_ecs
+          ky_test_render
+          ky_test_physics
+          ky_test_script
+          ky_test_pack
+          ky_test_2d
+          ky_test_hooks
+          ky_test_event
+          ky_test_anti_tamper
+          ky_test_input
+          ky_test_demo_loop
+          ky_test_resource_flow
+          ky_test_kyx_bindings
+          ky_test_kyx_gc
+          ky_test_editor_world
+          ky_test_scene_serialize
+          ky_test_spritesheet
+          ky_test_extreme
+        )
+
+        fail=0
+        for t in "${tests[@]}"; do
+          bin="${t}${SFX}"
+          if [ ! -f "$bin" ]; then
+            echo "NOT FOUND: $bin"
+            fail=1
+            continue
+          fi
+          echo "Running $bin..."
+          ./"$bin"
+          rc=$?
+          echo "$bin exit code: $rc"
+          if [ $rc -ne 0 ]; then
+            echo "FAILED: $bin"
+            fail=1
           fi
         done
+        echo "=== Test run summary (fail=$fail) ==="
+        if [ $fail -ne 0 ]; then
+          exit $fail
+        fi
         echo "=== All tests passed ==="
 
     - name: Upload build artifacts
