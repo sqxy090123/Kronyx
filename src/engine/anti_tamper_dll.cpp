@@ -219,7 +219,7 @@ static int ky_generate_salt(uint8_t *salt, size_t len) {
 /* ---- TOTP 生成（RFC 6238，整数运算避免精度问题）-------------------------- */
 
 static void ky_totp_generate(const uint8_t *key, size_t key_len,
-                             uint64_t time_step, uint8_t *out, int len) {
+                              uint64_t time_step, uint8_t *out, int len) {
     uint8_t time_buf[8];
     memset(time_buf, 0, sizeof(time_buf));
     for (int i = 0; i < 8; i++)
@@ -243,10 +243,6 @@ static void ky_totp_generate(const uint8_t *key, size_t key_len,
         out[i] = (uint8_t)('0' + (code % 10));
         code /= 10;
     }
-}
-
-static uint64_t ky_totp_time(void) {
-    return (uint64_t)time(NULL) / TOTP_TIME_STEP;
 }
 
 /* ---- 自身完整性检查 ------------------------------------------------------ */
@@ -385,6 +381,11 @@ KY_ANTITEMPER_API int ky_tamper_verify(
     /* 启动计时 */
     ctx.start_time = ky_mono_ms();
 
+    /* TOTP 时间步在整个 verify 调用内保持固定（RFC 6238 时间步为 30s 窗口，
+       5 轮循环耗时 ~4s，跨窗口边界会导致同 salt 两次重放 TOTP 值不同。
+       固定为 start_time 对应的窗口，保证确定性。 */
+    uint64_t fixed_time_step = ctx.start_time / 1000 / TOTP_TIME_STEP;
+
     uint8_t totp_val[TOTP_SIZE] = {0};
 
     for (int round = 0; round < ROUND_COUNT; round++) {
@@ -401,9 +402,8 @@ KY_ANTITEMPER_API int ky_tamper_verify(
             memcpy(round_key, ctx.salt, 32);
         }
 
-        /* 生成 TOTP */
-        uint64_t time_step = ky_totp_time();
-        ky_totp_generate(round_key, 32, time_step, totp_val, TOTP_SIZE);
+        /* 生成 TOTP（使用固定时间步，保证 5 轮一致） */
+        ky_totp_generate(round_key, 32, fixed_time_step, totp_val, TOTP_SIZE);
 
         /* HMAC 校验 salt + round 号 */
         uint8_t hmac_msg[SALT_SIZE + 4];

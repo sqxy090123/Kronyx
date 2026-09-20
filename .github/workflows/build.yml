@@ -90,9 +90,18 @@ jobs:
       shell: bash
       run: |
         set -x
-        # Windows builds produce .exe; detect suffix so `./$test` and `"$test"` both work.
-        if ls ky_test_core.exe >/dev/null 2>&1; then SFX=".exe"; else SFX=""; fi
-        echo "=== Test binary suffix: '${SFX}' ==="
+        # Determine where the test executables live.
+        # - Linux/macOS use the single-config Unix Makefile generator: binaries in build/.
+        # - Windows uses the Visual Studio multi-config generator: binaries in build/<Config>/.
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          BIN_DIR="${{ matrix.cmake_build_type }}"
+          SFX=".exe"
+        else
+          BIN_DIR="."
+          SFX=""
+        fi
+        cd "$BIN_DIR" || { echo "CWD missing: $BIN_DIR"; exit 1; }
+        echo "=== Running tests from: $(pwd)  (sfx='${SFX}') ==="
 
         tests=(
           ky_test_core
