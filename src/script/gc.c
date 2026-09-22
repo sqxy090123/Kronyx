@@ -12,6 +12,70 @@
 /* The real struct is in vm.c; we need to extend it there. */
 /* For now we forward-declare and let vm.c define the full struct. */
 
+/* Relocation record: old→new start offset and the total object size so the
+ * root pointer can be remapped regardless of where within the object it sits. */
+typedef struct GcRelocation {
+    uint32_t old_offset; /* start offset within generation */
+    uint32_t new_offset;
+    uint32_t total_size; /* full object size (header + payload) */
+    int      in_nursery; /* 1=nursery, 0=tenured */
+} GcRelocation;
+
+/* Relocate all VM root pointers (stack, gvar_vals, gc_roots, barrier_log)
+ * after compacting nursery or tenured.
+ *
+ * GC pointers point to obj->data (obj_start + sizeof(kyGcObject)), which is
+ * within [old_offset, old_offset + total_size), so the full object size is
+ * recorded in each relocation entry.
+ */
+static void gc_relocate_roots(struct kyVM *vm, GcRelocation *rels, uint32_t rel_count) {
+    if (rel_count == 0) return;
+    KyGcHeap *gc = &vm->gc;
+
+    #define RELOCATE_PTR(raw) \
+    do { \
+        if ((raw) == NULL) break; \
+        uint8_t *r = (uint8_t *)(raw); \
+        for (uint32_t _r = 0; _r < rel_count; _r++) { \
+            uint8_t *base = rels[_r].in_nursery ? gc->nursery : gc->tenured; \
+            uint32_t gen_size = rels[_r].in_nursery ? gc->nursery_size : gc->tenured_size; \
+            if (r < base || r >= base + gen_size) continue; \
+            uint32_t off = (uint32_t)(r - base); \
+            if (off >= rels[_r].old_offset && off < rels[_r].old_offset + rels[_r].total_size) { \
+                uint32_t delta = off - rels[_r].old_offset; \
+                (raw) = base + rels[_r].new_offset + delta; \
+                break; \
+            } \
+        } \
+    } while (0)
+
+    /* VM stack string/array pointers */
+    for (int i = 0; i < vm->stack_top; i++) {
+        kyValue *v = &vm->stack[i];
+        if (v->type == KYT_STRING && v->as.sval) RELOCATE_PTR(v->as.sval);
+        if (v->type == KYT_ARRAY && v->as.arr)   RELOCATE_PTR(v->as.arr);
+    }
+
+    /* Global variables */
+    for (int i = 0; i < vm->gvar_count; i++) {
+        kyValue *v = &vm->gvar_vals[i];
+        if (v->type == KYT_STRING && v->as.sval) RELOCATE_PTR(v->as.sval);
+        if (v->type == KYT_ARRAY && v->as.arr)   RELOCATE_PTR(v->as.arr);
+    }
+
+    /* Host-registered GC roots */
+    for (int i = 0; i < vm->gc_root_count; i++) {
+        RELOCATE_PTR(vm->gc_roots[i]);
+    }
+
+    /* Barrier log */
+    for (uint32_t i = 0; i < gc->barrier_count; i++) {
+        RELOCATE_PTR(gc->barrier_log[i]);
+    }
+
+    #undef RELOCATE_PTR
+}
+
 /* ---------------------------------------------------------------------------
  * Timing helper
  * --------------------------------------------------------------------------- */
@@ -338,11 +402,14 @@ size_t ky_gc_run_nursery(struct kyVM *vm) {
     uint32_t write = 0;
     uint32_t old_used = gc->nursery_used;
     int promoted = 0, freed = 0;
+    GcRelocation rels[128];
+    uint32_t rel_count = 0;
 
     for (uint32_t off = 0; off + sizeof(kyGcObject) <= old_used; ) {
         kyGcObject *obj = (kyGcObject *)(gc->nursery + off);
         uint32_t total = obj->size;
         if (total == 0 || off + total > old_used) break;
+        uint32_t old_off = off;
         off = (off + total + (KY_GC_OBJ_ALIGN - 1)) & ~(uint32_t)(KY_GC_OBJ_ALIGN - 1);
         if (off == 0) off = total;
 
@@ -352,28 +419,46 @@ size_t ky_gc_run_nursery(struct kyVM *vm) {
             if (obj->age >= KY_GC_PROMOTE_AGE) {
                 /* Try tenured */
                 if (gc->tenured_used + total <= gc->tenured_size) {
-                    kyGcObject *dst = (kyGcObject *)(gc->tenured + gc->tenured_used);
+                    uint32_t ten_off = gc->tenured_used;
+                    kyGcObject *dst = (kyGcObject *)(gc->tenured + ten_off);
                     memcpy(dst, obj, total);
                     dst->age = 0;
                     dst->type &= ~KY_GC_OBJ_MARKED;
                     gc->tenured_used += total;
                     promoted++;
+                    if (rel_count < 128) {
+                        rels[rel_count].old_offset = old_off;
+                        rels[rel_count].new_offset = ten_off;
+                        rels[rel_count].total_size = total;
+                        rels[rel_count].in_nursery = 0;
+                        rel_count++;
+                    }
                     continue; /* skip copying to nursery */
                 } else {
                     gc->nursery_degraded++;
                 }
             }
             /* Keep in nursery */
+            uint32_t new_off = write;
             if (write != off) {
                 kyGcObject *dst = (kyGcObject *)(gc->nursery + write);
                 memcpy(dst, obj, total);
             }
             write += total;
-            /* keep mark for further use in this cycle */
+            if (rel_count < 128) {
+                rels[rel_count].old_offset = old_off;
+                rels[rel_count].new_offset = new_off;
+                rels[rel_count].total_size = total;
+                rels[rel_count].in_nursery = 1;
+                rel_count++;
+            }
         } else {
             freed++;
         }
     }
+
+    /* Relocate all root pointers to new object locations */
+    gc_relocate_roots(vm, rels, rel_count);
 
     /* Clear all remaining marks */
     for (uint32_t off = 0; off + sizeof(kyGcObject) <= write; ) {
@@ -437,43 +522,69 @@ size_t ky_gc_run_full(struct kyVM *vm) {
     }
 
     /* Compact nursery */
+    GcRelocation rels_n[256];
+    uint32_t rel_count_n = 0;
     uint32_t nw = 0;
     for (uint32_t off = 0; off + sizeof(kyGcObject) <= gc->nursery_used; ) {
         kyGcObject *obj = (kyGcObject *)(gc->nursery + off);
         uint32_t total = obj->size;
         if (total == 0 || off + total > gc->nursery_used) break;
+        uint32_t old_off = off;
         off = (off + total + (KY_GC_OBJ_ALIGN - 1)) & ~(uint32_t)(KY_GC_OBJ_ALIGN - 1);
         if (off == 0) off = total;
         if (obj->type & KY_GC_OBJ_MARKED) {
+            uint32_t new_off = nw;
             if (nw != off) {
                 kyGcObject *dst = (kyGcObject *)(gc->nursery + nw);
                 memcpy(dst, obj, total);
             }
             nw += total;
+            if (rel_count_n < 256) {
+                rels_n[rel_count_n].old_offset = old_off;
+                rels_n[rel_count_n].new_offset = new_off;
+                rels_n[rel_count_n].total_size = total;
+                rels_n[rel_count_n].in_nursery = 1;
+                rel_count_n++;
+            }
         }
     }
     gc->nursery_used = nw;
 
     /* Compact tenured */
+    GcRelocation rels_t[256];
+    uint32_t rel_count_t = 0;
     uint32_t tw = 0;
     size_t freed_bytes = 0;
     for (uint32_t off = 0; off + sizeof(kyGcObject) <= gc->tenured_used; ) {
         kyGcObject *obj = (kyGcObject *)(gc->tenured + off);
         uint32_t total = obj->size;
         if (total == 0 || off + total > gc->tenured_used) break;
+        uint32_t old_off = off;
         off = (off + total + (KY_GC_OBJ_ALIGN - 1)) & ~(uint32_t)(KY_GC_OBJ_ALIGN - 1);
         if (off == 0) off = total;
         if (obj->type & KY_GC_OBJ_MARKED) {
+            uint32_t new_off = tw;
             if (tw != off) {
                 kyGcObject *dst = (kyGcObject *)(gc->tenured + tw);
                 memcpy(dst, obj, total);
             }
             tw += total;
+            if (rel_count_t < 256) {
+                rels_t[rel_count_t].old_offset = old_off;
+                rels_t[rel_count_t].new_offset = new_off;
+                rels_t[rel_count_t].total_size = total;
+                rels_t[rel_count_t].in_nursery = 0;
+                rel_count_t++;
+            }
         } else {
             freed_bytes += total;
         }
     }
     gc->tenured_used = tw;
+
+    /* Relocate all root pointers to new locations */
+    if (rel_count_n) gc_relocate_roots(vm, rels_n, rel_count_n);
+    if (rel_count_t) gc_relocate_roots(vm, rels_t, rel_count_t);
 
     /* Clear remaining marks */
     for (uint32_t off = 0; off + sizeof(kyGcObject) <= nw; ) {

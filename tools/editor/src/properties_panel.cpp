@@ -9,7 +9,7 @@
  * ============================================ */
 class PropertiesPanel {
 public:
-    PropertiesPanel() : current_entity(0xFFFFFFFF), property_capacity(16) {
+    PropertiesPanel() : current_entity(0xFFFFFFFF), property_capacity(16), property_count(0) {
         properties = static_cast<Property*>(calloc(property_capacity, sizeof(Property)));
     }
 

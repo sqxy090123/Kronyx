@@ -1,5 +1,6 @@
 #include "kronyx/resource.h"
 #include <string.h>
+#include <stdio.h>
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                               */
@@ -62,6 +63,7 @@ int ky_resmgr_register(kyResourceManager *m, kyResource *r) {
     if (ky_resmgr_find(m, r->path)) return 0;
     size_t n = strlen(r->path) + 1;
     char *key = (char *)ky_mem_alloc(&m->alloc, n);
+    if (!key) return 0;
     memcpy(key, r->path, n);
     r->path = key;
     ky_hashmap_set_key(&m->resources, key, r);
@@ -81,6 +83,13 @@ kyResource *ky_resmgr_acquire(kyResourceManager *m, const char *path) {
 
 void ky_resmgr_release(kyResourceManager *m, kyResource *r) {
     if (!m || !r) return;
+    /* A resource removed from the hashmap is already destroyed; reject a
+     * second release of the same pointer to avoid heap-use-after-free. */
+    if (!ky_hashmap_get(&m->resources, r->path)) {
+        fprintf(stderr, "resmgr: release on already-destroyed resource '%s'\n",
+                r->path ? r->path : "?");
+        return;
+    }
     r->ref_count--;
     if (r->ref_count <= 0) {
         const char *key = r->path;

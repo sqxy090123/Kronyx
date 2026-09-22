@@ -93,7 +93,12 @@ static kyValue load_const(kyVM *vm, kyProto *proto, int idx) {
 }
 
 static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
-    if (vm->stack_top + 10 > KY_MAX_STACK) {
+    /* 帧宽度 = max(局部寄存器, 参数, 临时寄存器) 向上取整到 12。
+     * 局部寄存器 0..local_count-1；临时寄存器 local_count+1、local_count+2
+     * （见编译器 while 条件与赋值路径）；参数占前 param_count 个槽。
+     * 12 足以容纳当前编译器使用的所有寄存器编号（< 12）。 */
+    int frame_w = 12;
+    if (vm->stack_top + frame_w > KY_MAX_STACK) {
         strncpy(vm->error_msg, "heap stack overflow", sizeof(vm->error_msg));
         return nil_val();
     }
@@ -104,6 +109,7 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
     vm->call_depth++;
     int saved_top = vm->stack_top;
     int base = vm->stack_top;
+    vm->stack_top += frame_w;
     int pc = 0;
     int locals_count = proto->param_count;
     for (int i = 0; i < locals_count && i < argc; i++) {
@@ -766,7 +772,10 @@ static void compile_statement(kyCompileState *cs, kyAstNode *stmt) {
         }
         case KY_AST_EXPR_STMT: {
             if (stmt->as.expr_stmt.expr) {
-                int reg = 0;
+                /* Use a scratch register outside the local range so that the
+                 * left operand of a binary expression does not clobber a
+                 * parameter or local variable slot. */
+                int reg = cs->local_count + 1;
                 compile_expression(cs, stmt->as.expr_stmt.expr, reg);
             }
             break;
@@ -822,12 +831,15 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
                     int local = compile_find_local(cs, name);
                     if (local >= 0) {
                         if (tok == KYX_TK_ASSIGN) {
-                            compile_expression(cs, node->as.binop.right, local);
+                            int tmp = cs->local_count + 1;
+                            compile_expression(cs, node->as.binop.right, tmp);
+                            compile_emit(cs, 5, local, tmp, 0);  /* OP_MOVE: local = tmp */
                         } else {
-                            compile_expression(cs, node->as.binop.right, dest + 1);
+                            int rhs_reg = cs->local_count + 1;
+                            compile_expression(cs, node->as.binop.right, rhs_reg);
                             int oc = tok == KYX_TK_PLUSEQ ? 6 : tok == KYX_TK_MINUSEQ ? 7 :
                                      tok == KYX_TK_STAREQ ? 8 : tok == KYX_TK_DIVEQ ? 9 : 10;
-                            compile_emit(cs, oc, local, local, dest + 1);
+                            compile_emit(cs, oc, local, local, rhs_reg);
                         }
                         break;
                     }

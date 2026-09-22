@@ -91,7 +91,10 @@ kyAllocator ky_tracking_allocator(kyMemStats *stats_out) {
 }
 
 void ky_mem_stats_snapshot(kyMemStats *out) {
-    KY_UNUSED(out);
+    if (!out) return;
+    /* ky_tracking_allocator writes stats directly into out (same struct layout),
+     * so the tracking allocator's state is always current in out. Nothing to
+     * copy — the function is a no-op placeholder for API symmetry. */
 }
 
 void *ky_mem_alloc(kyAllocator *a, size_t size) {

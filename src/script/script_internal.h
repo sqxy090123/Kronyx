@@ -108,6 +108,7 @@ typedef struct kyProto {
     int        str_count;
     int        str_cap;
     int        param_count;
+    int        local_count;
     char      *name;
 } kyProto;
 

@@ -208,6 +208,8 @@ static const char *FS_SRC =
 static int cache_init(kyRenderDevice *rd) {
     if (g_cache.rd == rd && g_cache.pipeline && g_cache.vbo && g_cache.ibo)
         return 0;
+    if (g_cache.rd != rd && g_cache.rd)
+        cache_destroy_with_rd(g_cache.rd);
     cache_destroy();
     g_cache.rd = rd;
 
@@ -328,9 +330,13 @@ static void emit_sprite(const ky2dItem *it, size_t base_vertex) {
     }
 }
 
-/* Fill one batch of sprites into staging buffers; returns sprite count. */
+/* Fill one batch of sprites into staging buffers; returns sprite count.
+ *
+ * If sprite_gen produces more than 4 vertices or 6 indices for any sprite,
+ * the counts are clamped so we never over-read the g_vbo/g_ibo staging.
+ * Users should implement sprite_gen to emit exactly one quad. */
 static size_t fill_batch(const ky2dItem *batch, size_t batch_count,
-                         const ky2dContext *ctx) {
+                          const ky2dContext *ctx) {
     size_t n = 0;
     for (size_t s = 0; s < batch_count; s++) {
         size_t base_vertex = n * 4;
@@ -339,7 +345,11 @@ static size_t fill_batch(const ky2dItem *batch, size_t batch_count,
             ctx->sprite_gen(&batch[s].tr, batch[s].sp,
                             &g_vbo[base_vertex], &g_ibo[n * 6],
                             &vc, &ic, ctx->user);
-            (void)vc; (void)ic;
+            if (vc > 4 || ic > 6) {
+                ky_log_write(KY_LOG_WARN,
+                             "2d: sprite_gen produced %zu verts / %zu idx "
+                             "(max 4/6); clamping", vc, ic);
+            }
         } else {
             emit_sprite(&batch[s], base_vertex);
             uint16_t base = (uint16_t)base_vertex;

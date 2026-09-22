@@ -145,6 +145,14 @@ static void *gl_create(void *platform_win) {
     d->width = 128;
     d->height = 128;
     glGenVertexArrays(1, &d->vao);
+    if (d->vao == 0) {
+        eglMakeCurrent(d->dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        eglDestroyContext(d->dpy, d->ctx);
+        eglDestroySurface(d->dpy, d->surf);
+        eglTerminate(d->dpy);
+        free(d);
+        return NULL;
+    }
     glBindVertexArray(d->vao);
     return d;
 }
@@ -152,7 +160,9 @@ static void *gl_create(void *platform_win) {
 static void gl_destroy(void *impl) {
     kyGLDevice *d = (kyGLDevice *)impl;
     if (!d) return;
-    glDeleteVertexArrays(1, &d->vao);
+    /* VAO must be deleted while its owning context is current */
+    eglMakeCurrent(d->dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, d->ctx);
+    if (d->vao) glDeleteVertexArrays(1, &d->vao);
     eglMakeCurrent(d->dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     eglDestroyContext(d->dpy, d->ctx);
     eglDestroySurface(d->dpy, d->surf);
@@ -161,7 +171,7 @@ static void gl_destroy(void *impl) {
 }
 
 static const char *gl_name(void) {
-    return "opengl3.3";
+    return "opengl-es3";
 }
 
 static void *gl_create_shader(void *impl, const kyShaderSource *src) {
@@ -237,6 +247,7 @@ static void *gl_create_buffer(void *impl, size_t size, const void *data, int dyn
     kyGLBuffer *b = (kyGLBuffer *)malloc(sizeof(kyGLBuffer));
     if (!b) return NULL;
     glGenBuffers(1, &b->id);
+    if (b->id == 0) { free(b); return NULL; }
     glBindBuffer(GL_ARRAY_BUFFER, b->id);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)size, data, dynamic ? GL_DYNAMIC_DRAW : GL_STATIC_DRAW);
     b->size = size;
@@ -269,6 +280,7 @@ static void *gl_create_texture(void *impl, int w, int h, int ch, const void *px)
     kyGLTexture *t = (kyGLTexture *)malloc(sizeof(kyGLTexture));
     if (!t) return NULL;
     glGenTextures(1, &t->id);
+    if (t->id == 0) { free(t); return NULL; }
     glBindTexture(GL_TEXTURE_2D, t->id);
     GLenum fmt = (ch >= 3) ? GL_RGBA : GL_LUMINANCE;
     glTexImage2D(GL_TEXTURE_2D, 0, (ch >= 3) ? GL_RGBA : GL_LUMINANCE, w, h, 0,
@@ -313,6 +325,15 @@ static void *gl_create_pipeline(void *impl, const kyPipelineDesc *desc) {
     return p;
 }
 
+/* Ownership rule: a pipeline holds a raw pointer to a kyGLShader
+ * (allocated via gl_create_shader).  The caller MUST destroy all pipelines
+ * that reference a shader before calling gl_destroy_shader on that shader,
+ * otherwise gl_set_pipeline will dereference freed memory (use-after-free).
+ * Runtime detection of a freed pointer is not possible; this is a
+ * programmer responsibility enforced by the API contract.
+ *
+ * Destroy order: pipeline first, shader second.
+ */
 static void gl_destroy_pipeline(void *impl, void *pipe) {
     kyGLDevice *d = (kyGLDevice *)impl;
     kyGLPipeline *p = (kyGLPipeline *)pipe;
@@ -372,10 +393,13 @@ static void gl_set_texture(void *cl, int slot, void *tex) {
 static void gl_set_uniform(void *cl, int loc, const void *data, int bytes) {
     kyGLCmdList *c = (kyGLCmdList *)cl;
     if (!c || !data || bytes <= 0) return;
-    if (bytes == 64) {
-        glUniformMatrix4fv(loc, 1, GL_FALSE, (const GLfloat *)data);
-    } else {
-        glUniform4fv(loc, bytes / 16, (const GLfloat *)data);
+    switch (bytes) {
+        case 4:  glUniform1fv(loc, 1, (const GLfloat *)data); break;
+        case 8:  glUniform2fv(loc, 1, (const GLfloat *)data); break;
+        case 12: glUniform3fv(loc, 1, (const GLfloat *)data); break;
+        case 16: glUniform4fv(loc, 1, (const GLfloat *)data); break;
+        case 64: glUniformMatrix4fv(loc, 1, GL_FALSE, (const GLfloat *)data); break;
+        default: break; /* unsupported size — log once if needed */
     }
 }
 
@@ -402,7 +426,8 @@ static void gl_submit(void *impl, void *cl) {
 static void gl_present(void *impl) {
     kyGLDevice *d = (kyGLDevice *)impl;
     if (!d) return;
-    glFinish();
+    glFlush(); /* glFinish blocks the entire CPU/GPU pipeline; flush is enough
+                 * for EGL pbuffer surfaces */
     d->frame_count++;
 }
 

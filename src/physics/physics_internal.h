@@ -11,6 +11,7 @@
 typedef struct kyPhysBody {
     kyRigidBody body;
     int         alive;
+    int         has_aabb; /* 1 when a valid collider-derived AABB is set */
     kyVec3      aabb_min;
     kyVec3      aabb_max;
 } kyPhysBody;
@@ -48,6 +49,7 @@ struct kyPhysicsWorld {
     int             collider_count;
     kySAPEvent     sap_events[KY_PHYSICS_MAX_SAP_EVENTS * 2];
     int             sap_event_count;
+    int             sap_active[KY_PHYSICS_MAX_BODIES];
     kyContactPair  pairs[KY_PHYSICS_MAX_PAIRS];
     int             pair_count;
     uint32_t        next_body_id;
@@ -66,10 +68,13 @@ struct kyPhysicsWorld {
 };
 
 static inline int sap_event_cmp(const void *a, const void *b) {
-    float va = ((const kySAPEvent *)a)->coord;
-    float vb = ((const kySAPEvent *)b)->coord;
-    if (va < vb) return -1;
-    if (va > vb) return 1;
+    const kySAPEvent *ea = (const kySAPEvent *)a;
+    const kySAPEvent *eb = (const kySAPEvent *)b;
+    if (ea->coord < eb->coord) return -1;
+    if (ea->coord > eb->coord) return 1;
+    /* Tie-break: min events before max events at same coord, then body idx */
+    if (ea->min_event != eb->min_event) return ea->min_event ? -1 : 1;
+    if (ea->body_idx != eb->body_idx) return ea->body_idx < eb->body_idx ? -1 : 1;
     return 0;
 }
 
@@ -84,10 +89,12 @@ static inline void phys_body_update_aabb(kyPhysBody *b, const kyPhysicsWorld *pw
         }
     }
     if (!c) {
-        b->aabb_min = (kyVec3){-1e10f, -1e10f, -1e10f};
-        b->aabb_max = (kyVec3){ 1e10f,  1e10f,  1e10f};
+        b->has_aabb = 0;
+        b->aabb_min = (kyVec3){0, 0, 0};
+        b->aabb_max = (kyVec3){0, 0, 0};
         return;
     }
+    b->has_aabb = 1;
     switch (c->shape) {
         case KY_SHAPE_SPHERE: {
             float rad = c->u.sphere.radius;
@@ -101,8 +108,9 @@ static inline void phys_body_update_aabb(kyPhysBody *b, const kyPhysicsWorld *pw
             break;
         }
         default:
-            b->aabb_min = (kyVec3){-1e10f, -1e10f, -1e10f};
-            b->aabb_max = (kyVec3){ 1e10f,  1e10f,  1e10f};
+            b->has_aabb = 0;
+            b->aabb_min = (kyVec3){0, 0, 0};
+            b->aabb_max = (kyVec3){0, 0, 0};
             break;
     }
 }

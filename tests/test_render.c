@@ -37,8 +37,8 @@ int main(void) {
     /* GL backend (stub) */
     kyRenderDevice *rd_gl = ky_rd_create(KY_RENDERER_GL, NULL);
     ASSERT(rd_gl != NULL, "create GL renderer succeeds");
-    ASSERT(strcmp(ky_rd_backend_name(rd_gl), "opengl3.3") == 0,
-           "GL backend name is 'opengl3.3'");
+    ASSERT(strcmp(ky_rd_backend_name(rd_gl), "opengl-es3") == 0,
+           "GL backend name is 'opengl-es3'");
     ASSERT(ky_rd_backend(rd_gl) == KY_RENDERER_GL,
            "GL backend enum is GL");
 

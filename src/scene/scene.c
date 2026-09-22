@@ -26,7 +26,7 @@ kyScene *ky_scene_create(kyAllocator *alloc, const char *name) {
 
 void ky_scene_destroy(kyScene *s) {
     if (!s) return;
-    ky_world_destroy(s->world);
+    if (s->world) ky_world_destroy(s->world);
     /* Meta values are scene-owned strings; the hashmap only frees owned keys. */
     for (size_t i = 0; i < s->meta.cap; ++i) {
         kyHashEntry *e = &s->meta.entries[i];
@@ -41,7 +41,7 @@ void ky_scene_destroy(kyScene *s) {
 }
 
 void ky_scene_set_meta(kyScene *s, const char *key, const char *value) {
-    if (!s || !key) return;
+    if (!s || !key || !s->world) return;
     kyAllocator *al = &s->world->alloc;
     char *k = (char *)ky_mem_dup(al, key, strlen(key) + 1);
     char *v = (char *)ky_mem_dup(al, value, strlen(value) + 1);
@@ -206,6 +206,7 @@ int ky_scene_load(kyScene *s, const char *path) {
     raw = text;
 
     kyAllocator saved = s->alloc;
+    (void)saved; /* allocator is a value type, no need to save/restore */
     int r = ky_scene_reinit_world(s);
     if (r != 0) { free(raw); return (r < 0) ? r : -3; }
 
@@ -227,8 +228,11 @@ int ky_scene_load(kyScene *s, const char *path) {
     /* Parse: collect component attribute maps per entity, then build world. */
     enum { ST_OUTSIDE, ST_ENTITY } state = ST_OUTSIDE;
     uint32_t cur_tid = (uint32_t)-1;
+    (void)cur_tid;
     kyEntity cur_ent = {0, 0};
+    (void)cur_ent;
     int has_transform = 0;
+    (void)has_transform;
 
     #define MAX_ENTITIES 64
     #define MAX_ATTRS 32
@@ -272,7 +276,6 @@ int ky_scene_load(kyScene *s, const char *path) {
                     if (strncmp(ln, "transform", 9) == 0 &&
                         (ln[9] == '\0' || isspace((unsigned char)ln[9]))) {
                         cur_tid = tid_transform;
-                        has_transform = 1;
                         is_comp = 1;
                     } else if (strncmp(ln, "sprite", 6) == 0 &&
                                (ln[6] == '\0' || isspace((unsigned char)ln[6]))) {

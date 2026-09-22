@@ -37,6 +37,14 @@
 #define KY_SALT_SIZE                 256
 #define KY_ROUND_COUNT               5
 
+/* Constant-time comparison — prevents timing side-channel on HMAC/salt bytes */
+static int ky_consttime_eq(const uint8_t *a, const uint8_t *b, size_t len) {
+    uint8_t diff = 0;
+    for (size_t i = 0; i < len; i++)
+        diff |= (uint8_t)(a[i] ^ b[i]);
+    return diff == 0;
+}
+
 /* ---- 函数指针类型 -------------------------------------------------------- */
 
 typedef int  (*PFN_verify)(const uint8_t *, size_t, const uint8_t *,
@@ -115,30 +123,33 @@ static int ky_load_lib(void) {
 
     if (!ky_get_exe_dir(dir, sizeof(dir))) return 0;
 
-#ifdef _WIN32
-    strcpy(path, dir);
-    strcat(path, KY_ANTITEMPER_LIB_NAME_WIN);
-    g_hLib = LoadLibraryA(path);
-    if (!g_hLib) return 0;
+    #ifdef _WIN32
+        size_t n = strlen(dir);
+        if (n + sizeof(KY_ANTITEMPER_LIB_NAME_WIN) > sizeof(path)) return 0;
+        memcpy(path, dir, n);
+        memcpy(path + n, KY_ANTITEMPER_LIB_NAME_WIN, sizeof(KY_ANTITEMPER_LIB_NAME_WIN));
+        g_hLib = LoadLibraryA(path);
+        if (!g_hLib) return 0;
+        g_fnVerify = (PFN_verify)GetProcAddress((HMODULE)g_hLib, "ky_tamper_verify");
+        g_fnVer    = (PFN_version)GetProcAddress((HMODULE)g_hLib, "ky_tamper_version");
+    #else
+        const char *suffix =
+        #ifdef __APPLE__
+            KY_ANTITEMPER_LIB_NAME_MAC;
+        #else
+            KY_ANTITEMPER_LIB_NAME_UNIX;
+        #endif
+        size_t n = strlen(dir);
+        if (n + strlen(suffix) + 1 > sizeof(path)) return 0;
+        memcpy(path, dir, n);
+        memcpy(path + n, suffix, strlen(suffix) + 1);
 
-    g_fnVerify = (PFN_verify)GetProcAddress((HMODULE)g_hLib, "ky_tamper_verify");
-    g_fnVer    = (PFN_version)GetProcAddress((HMODULE)g_hLib, "ky_tamper_version");
-#else
-    const char *suffix =
-#ifdef __APPLE__
-        KY_ANTITEMPER_LIB_NAME_MAC;
-#else
-        KY_ANTITEMPER_LIB_NAME_UNIX;
-#endif
-    strcpy(path, dir);
-    strcat(path, suffix);
+        g_hLib = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+        if (!g_hLib) return 0;
 
-    g_hLib = dlopen(path, RTLD_NOW | RTLD_LOCAL);
-    if (!g_hLib) return 0;
-
-    g_fnVerify = (PFN_verify)dlsym(g_hLib, "ky_tamper_verify");
-    g_fnVer    = (PFN_version)dlsym(g_hLib, "ky_tamper_version");
-#endif
+        g_fnVerify = (PFN_verify)dlsym(g_hLib, "ky_tamper_verify");
+        g_fnVer    = (PFN_version)dlsym(g_hLib, "ky_tamper_version");
+    #endif
 
     return (g_fnVerify != NULL) ? 1 : 0;
 }
@@ -168,7 +179,7 @@ static int ky_local_hmac_sha256(const uint8_t *key, size_t key_len,
     unsigned char *result = HMAC(EVP_sha256(), key, (int)key_len,
                                  msg, msg_len, out, NULL);
     if (!result) return 0;
-    if (out_len) *out_len = (size_t)EVP_MAX_MD_SIZE;
+    if (out_len) *out_len = KY_HMAC_SIZE;
     return 1;
 }
 #endif
@@ -307,7 +318,7 @@ KyTamperResult ky_tamper_init(KyTamperMode mode, size_t prealloc_bytes) {
     int computed = ky_local_hmac_sha256(round_key, 32, verify_msg,
                                         sizeof(verify_msg), local_hmac, NULL);
     int hmac_match = computed &&
-                     (memcmp(local_hmac, hmac_out, KY_HMAC_SIZE) == 0);
+                      ky_consttime_eq(local_hmac, hmac_out, KY_HMAC_SIZE);
 
     if (hmac_match) {
         ky_tlog(2, "HMAC 本地验证通过");
@@ -323,7 +334,17 @@ KyTamperResult ky_tamper_init(KyTamperMode mode, size_t prealloc_bytes) {
                                "HMAC 本地验证失败，继续运行（警告模式）");
     }
 #else
-    ky_tlog(1, "跳过本地 HMAC 验证（未链接 OpenSSL）");
+    /* No OpenSSL: cannot verify HMAC locally. A replacement .so/.dll can simply
+     * return the expected HMAC bytes, so hard-fail in ERROR mode instead of
+     * silently trusting the library's word. */
+    ky_tlog(0, "未链接 OpenSSL：无法本地验证 HMAC，无法完成完整性校验");
+    g_result = KY_TAMPER_FAIL_HMAC;
+    if (mode == KY_TAMPER_MODE_ERROR) {
+        if (g_dialog) g_dialog(0, "Tamper Check",
+                               "缺少本地 HMAC 验证依赖，完整性校验未完成\n游戏无法启动");
+        return g_result;
+    }
+    g_result = KY_TAMPER_OK; /* warning mode: proceed with reduced trust */
 #endif
 
     g_done = 1;

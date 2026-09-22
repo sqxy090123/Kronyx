@@ -36,21 +36,31 @@ public:
 
     void add_entity(uint32_t entity, const char *name) {
         if (node_count >= node_capacity) {
-            node_capacity *= 2;
-            entity_nodes = (void **)realloc(entity_nodes, node_capacity * sizeof(void *));
-            entity_names = (const char **)realloc(entity_names, node_capacity * sizeof(const char *));
+            size_t new_cap = node_capacity * 2;
+            void **new_nodes = (void **)realloc(entity_nodes, new_cap * sizeof(void *));
+            if (!new_nodes) return;
+            const char **new_names = (const char **)realloc(entity_names, new_cap * sizeof(const char *));
+            if (!new_names) { free(new_nodes); return; }
+            entity_nodes = new_nodes;
+            entity_names = new_names;
+            node_capacity = new_cap;
         }
         entity_nodes[node_count] = (void *)(uintptr_t)entity;
-        entity_names[node_count] = name ? strdup(name) : strdup("Untitled");
-        node_count++;
+        char *dup = strdup(name ? name : "Untitled");
+        if (dup) {
+            entity_names[node_count] = dup;
+            node_count++;
+        }
     }
 
     void remove_entity(uint32_t entity) {
         for (size_t i = 0; i < node_count; i++) {
             if ((uint32_t)(uintptr_t)entity_nodes[i] == entity) {
                 free((void *)entity_names[i]);
-                entity_nodes[i] = entity_nodes[node_count - 1];
-                entity_names[i] = entity_names[node_count - 1];
+                if (i != node_count - 1) {
+                    entity_nodes[i] = entity_nodes[node_count - 1];
+                    entity_names[i] = entity_names[node_count - 1];
+                }
                 node_count--;
                 break;
             }

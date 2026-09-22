@@ -52,7 +52,7 @@ void ky_pool_destroy(kyPool *p) {
 }
 
 void ky_pool_reset(kyPool *p) {
-    if (!p) return;
+    if (!p || !p->free_list) return;
     p->count = 0;
     p->head = 0;
     for (size_t i = 0; i < p->cap; i++) {

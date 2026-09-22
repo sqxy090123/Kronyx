@@ -45,9 +45,15 @@ void ky_string_appendf(kyString *s, const char *fmt, ...) {
         return;
     }
     ky_string_reserve(s, s->len + (size_t)n + 1);
-    vsnprintf(s->data + s->len, (size_t)n + 1, fmt, ap2);
+    if (!s->data) {
+        va_end(ap2);
+        return;
+    }
+    int written = vsnprintf(s->data + s->len, (size_t)n + 1, fmt, ap2);
     va_end(ap2);
-    s->len += (size_t)n;
+    if (written < 0) return;
+    s->len += (size_t)written;
+    s->data[s->len] = '\0';
 }
 
 void ky_string_clear(kyString *s) {

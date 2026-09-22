@@ -56,8 +56,16 @@ public:
         LogEntry *entry = (LogEntry *)malloc(sizeof(LogEntry));
         if (!entry) return;
         entry->level = level;
-        entry->message = message ? strdup(message) : strdup("");
-        entry->file = file ? strdup(file) : strdup("");
+        char *m = strdup(message ? message : "");
+        char *f = strdup(file ? file : "");
+        if (!m || !f) {
+            free(m);
+            free(f);
+            free(entry);
+            return;
+        }
+        entry->message = m;
+        entry->file = f;
         entry->line = line;
         entry->timestamp = time(NULL);
         entry->next = nullptr;

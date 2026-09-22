@@ -32,7 +32,14 @@ void ky_arena_destroy(kyArena *a) {
 static void *grow_arena(kyArena *a, size_t needed) {
     size_t new_cap = a->capacity;
     if (new_cap == 0) new_cap = KY_ARENA_GROW_MIN;
-    while (new_cap < needed) new_cap *= KY_ARENA_GROW_FACTOR;
+    while (new_cap < needed) {
+        if (new_cap > SIZE_MAX / KY_ARENA_GROW_FACTOR) {
+            new_cap = needed; /* overflow guard: stop doubling, jump to needed */
+            break;
+        }
+        new_cap *= KY_ARENA_GROW_FACTOR;
+    }
+    if (new_cap < needed) new_cap = needed;
     void *new_base = ky_mem_realloc(&a->alloc, a->base, new_cap);
     if (!new_base) return NULL;
     a->base = new_base;

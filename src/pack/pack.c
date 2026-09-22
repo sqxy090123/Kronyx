@@ -19,6 +19,19 @@ static int ky_mkdir(const char *p, int m) { (void)m; return _mkdir(p); }
 #define KY_PACK_ENGINE_ROOT "."
 #endif
 
+/* Refuse shell metacharacters in user-supplied paths to prevent command
+ * injection via the shell invocations below. */
+static int path_is_safe(const char *p) {
+    if (!p) return 0;
+    for (const char *c = p; *c; c++) {
+        if (*c == ';' || *c == '&' || *c == '|' || *c == '$' ||
+            *c == '`' || *c == '"' || *c == '\'' || *c == '(' ||
+            *c == ')' || *c == '<' || *c == '>' || *c == '\n')
+            return 0;
+    }
+    return 1;
+}
+
 static const char *target_name(kyPackTarget t) {
     switch (t) {
         case KY_PACK_EXE: return "exe";
@@ -226,6 +239,8 @@ static int pack_jar(const kyPackDesc *desc, char *err, int err_size) {
 int ky_pack(const kyPackDesc *desc, kyPackTarget target, char *err, int err_size) {
     if (!desc || !desc->out_path) return pack_fail(err, err_size, "invalid pack desc");
     if (!desc->script) return pack_fail(err, err_size, "missing game script");
+    if (!path_is_safe(desc->out_path))
+        return pack_fail(err, err_size, "out_path contains unsafe shell metacharacters");
     if (err && err_size > 0) err[0] = '\0';
 
     switch (target) {

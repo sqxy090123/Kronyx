@@ -1,6 +1,7 @@
 #include "render_backend.h"
 #include "kronyx/math.h"
 #include "kronyx/memory.h"
+#include "kronyx/log.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -101,6 +102,8 @@ void *ky_rd_begin(kyRenderDevice *rd) {
     if (cl) {
         kyCmdHeader *hdr = (kyCmdHeader *)cl;
         hdr->rd = rd;
+    } else {
+        ky_log_write(KY_LOG_ERROR, "render: ky_rd_begin failed (OOM) — frame draws will be dropped");
     }
     return cl;
 }

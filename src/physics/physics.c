@@ -22,6 +22,7 @@ kyPhysicsWorld *ky_physics_create(kyVec3 gravity) {
     memset(pw->colliders, 0, sizeof(pw->colliders));
     memset(pw->pairs, 0, sizeof(pw->pairs));
     memset(pw->force_fields, 0, sizeof(pw->force_fields));
+    memset(pw->sap_active, 0, sizeof(pw->sap_active));
     return pw;
 }
 
@@ -129,6 +130,9 @@ static void sap_build_events(kyPhysicsWorld *pw) {
     for (int i = 0; i < pw->body_count; i++) {
         kyPhysBody *b = &pw->bodies[i];
         if (!b->alive) continue;
+        kyRigidBody *r = &b->body;
+        if (r->inv_mass <= 0.0f) continue;
+        if (!b->has_aabb) continue;
         if (pw->sap_event_count + 2 >= KY_PHYSICS_MAX_SAP_EVENTS) break;
         int base = pw->sap_event_count;
         pw->sap_events[base].coord = b->aabb_min.x;
@@ -147,16 +151,16 @@ static void sap_build_events(kyPhysicsWorld *pw) {
 
 static void sap_find_pairs(kyPhysicsWorld *pw) {
     pw->pair_count = 0;
-    int active[KY_PHYSICS_MAX_BODIES] = {0};
+    memset(pw->sap_active, 0, sizeof(pw->sap_active));
     for (int i = 0; i < pw->sap_event_count; i++) {
         kySAPEvent *e = &pw->sap_events[i];
         int idx = e->body_idx;
         if (e->min_event) {
             for (int j = 0; j < idx; j++) {
-                if (active[j] && pw->pair_count < KY_PHYSICS_MAX_PAIRS) {
+                if (pw->sap_active[j] && pw->pair_count < KY_PHYSICS_MAX_PAIRS) {
                     kyPhysBody *a = &pw->bodies[j];
                     kyPhysBody *bb = &pw->bodies[idx];
-                    if (a->alive && bb->alive) {
+                    if (a->alive && bb->alive && a->has_aabb && bb->has_aabb) {
                         kyContactPair *p = &pw->pairs[pw->pair_count++];
                         p->body_a = (uint32_t)(j + 1);
                         p->body_b = (uint32_t)(idx + 1);
@@ -164,9 +168,9 @@ static void sap_find_pairs(kyPhysicsWorld *pw) {
                     }
                 }
             }
-            active[idx] = 1;
+            pw->sap_active[idx] = 1;
         } else {
-            active[idx] = 0;
+            pw->sap_active[idx] = 0;
         }
     }
 }
@@ -195,7 +199,7 @@ void ky_physics_step(kyPhysicsWorld *pw, float dt) {
         uint32_t ids[KY_PHYSICS_MAX_BODIES];
         int n = 0;
         for (int i = 0; i < pw->body_count; i++) {
-            if (!pw->bodies[i].alive) continue;
+            if (!pw->bodies[i].alive || !pw->bodies[i].has_aabb) continue;
             exts[n].min = pw->bodies[i].aabb_min;
             exts[n].max = pw->bodies[i].aabb_max;
             ids[n] = (uint32_t)(i + 1);
@@ -205,6 +209,10 @@ void ky_physics_step(kyPhysicsWorld *pw, float dt) {
         pw->broad_fn(exts, ids, n,
                      &pw->pairs[0].body_a, &pw->pairs[0].body_b,
                      &pw->pair_count, KY_PHYSICS_MAX_PAIRS);
+        /* Custom broadphase only fills body_a/body_b; set alive so the
+         * built-in narrowphase (if no narrow_fn) will process the pairs. */
+        for (int i = 0; i < pw->pair_count; i++)
+            pw->pairs[i].alive = 1;
     } else {
         sap_build_events(pw);
         sap_find_pairs(pw);
@@ -227,6 +235,7 @@ void ky_physics_step(kyPhysicsWorld *pw, float dt) {
         kyPhysBody *ba = &pw->bodies[ia];
         kyPhysBody *bb = &pw->bodies[ib];
         if (!ba->alive || !bb->alive) continue;
+        if (!ba->has_aabb || !bb->has_aabb) continue;
 
         /* Simple AABB overlap resolution (push apart) */
         kyVec3 overlap = ky_vec3_sub(
@@ -285,11 +294,23 @@ static kyPhysBody *body_by_id(const kyPhysicsWorld *pw, uint32_t body_id) {
 }
 
 void ky_physics_apply_impulse(kyPhysicsWorld *pw, uint32_t body_id, kyVec3 impulse, kyVec3 at) {
-    KY_UNUSED(at);
     kyPhysBody *b = body_by_id(pw, body_id);
     if (!b || b->body.inv_mass <= 0.0f) return;
     b->body.linear_velocity = ky_vec3_add(b->body.linear_velocity,
         ky_vec3_scale(impulse, b->body.inv_mass));
+    /* Angular impulse: torque = cross(at - position, impulse) * inv_inertia */
+    if (b->body.inv_inertia[0] > 0.0f || b->body.inv_inertia[1] > 0.0f ||
+        b->body.inv_inertia[2] > 0.0f) {
+        kyVec3 lever = ky_vec3_sub(at, b->body.position);
+        kyVec3 torque = {
+            lever.y * impulse.z - lever.z * impulse.y,
+            lever.z * impulse.x - lever.x * impulse.z,
+            lever.x * impulse.y - lever.y * impulse.x,
+        };
+        b->body.angular_velocity.x += torque.x * b->body.inv_inertia[0];
+        b->body.angular_velocity.y += torque.y * b->body.inv_inertia[1];
+        b->body.angular_velocity.z += torque.z * b->body.inv_inertia[2];
+    }
 }
 
 void ky_physics_get_body(const kyPhysicsWorld *pw, uint32_t body_id, kyRigidBody *out) {
@@ -305,6 +326,9 @@ void ky_physics_cast_ray(const kyPhysicsWorld *pw, kyVec3 origin, kyVec3 dir,
     out_hit->body_id = 0;
     if (!pw) return;
 
+    /* Guard against zero-direction ray: inv_dir would be infinite */
+    if (dir.x == 0.0f && dir.y == 0.0f && dir.z == 0.0f) return;
+
     kyVec3 inv_dir;
     inv_dir.x = dir.x != 0.0f ? 1.0f / dir.x : (dir.x > 0 ? 1e30f : -1e30f);
     inv_dir.y = dir.y != 0.0f ? 1.0f / dir.y : (dir.y > 0 ? 1e30f : -1e30f);
@@ -316,7 +340,7 @@ void ky_physics_cast_ray(const kyPhysicsWorld *pw, kyVec3 origin, kyVec3 dir,
 
     for (int i = 0; i < pw->body_count; i++) {
         const kyPhysBody *b = &pw->bodies[i];
-        if (!b->alive) continue;
+        if (!b->alive || !b->has_aabb) continue;
 
         uint32_t cid = b->body.collider_id;
         const kyCollider *col = NULL;
