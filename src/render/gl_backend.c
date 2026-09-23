@@ -490,12 +490,18 @@ static int gl_shader_uniform(void *impl, void *shader, const char *name) {
     return -1;
 }
 
+typedef struct kyGLStubBuffer {
+    size_t size;
+} kyGLStubBuffer;
+
 static void *gl_create_buffer(void *impl, size_t size, const void *data, int dynamic) {
     KY_UNUSED(impl);
-    KY_UNUSED(size);
     KY_UNUSED(data);
     KY_UNUSED(dynamic);
-    return malloc(1);
+    kyGLStubBuffer *b = (kyGLStubBuffer *)malloc(sizeof(kyGLStubBuffer));
+    if (!b) return NULL;
+    b->size = size;
+    return b;
 }
 
 static void gl_destroy_buffer(void *impl, void *buf) {
@@ -505,10 +511,9 @@ static void gl_destroy_buffer(void *impl, void *buf) {
 
 static int gl_update_buffer(void *impl, void *buf, size_t offset, size_t size, const void *data) {
     KY_UNUSED(impl);
-    KY_UNUSED(buf);
-    KY_UNUSED(offset);
-    KY_UNUSED(size);
-    KY_UNUSED(data);
+    kyGLStubBuffer *b = (kyGLStubBuffer *)buf;
+    if (!b || !data || size == 0) return -1;
+    if (offset > b->size || size > b->size - offset) return -1;
     return 0;
 }
 
