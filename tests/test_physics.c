@@ -107,6 +107,7 @@ int main(void) {
     printf("\n=== %d tests ran, %d failures ===\n", assertions, failures);
 
     ky_physics_destroy(pw);
+    return failures == 0 ? 0 : 1;
 }
 
 /* ===== Collision Event Tests ===== */

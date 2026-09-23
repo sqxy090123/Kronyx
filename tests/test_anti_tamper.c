@@ -122,8 +122,17 @@ static void test_shared_library(void) {
     /* Full verification pass (~4s): zero salt input -> library generates one */
     uint8_t salt_in[256];
     memset(salt_in, 0, sizeof(salt_in));
+    memset(salt_out, 0xFF, sizeof(salt_out));
+    memset(totp_out, 0, sizeof(totp_out));
     int r1 = verify(salt_in, sizeof(salt_in), NULL, NULL,
                     hmac_out, totp_out, sizeof(hmac_out), salt_out);
+    if (r1 != KY_TAMPER_OK) {
+        int sz = 0;
+        for (size_t i = 0; i < sizeof(salt_out); i++)
+            if (salt_out[i] != 0xFF) { sz = 1; break; }
+        printf("  DIAG: r1=%d salt_out_written=%d totp[0]=%u\n",
+               r1, sz, (unsigned)totp_out[0]);
+    }
     KY_CHECK(r1 == KY_TAMPER_OK);
 
     /* Salt returned must be non-zero */

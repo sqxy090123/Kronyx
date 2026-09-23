@@ -130,8 +130,6 @@ static void sap_build_events(kyPhysicsWorld *pw) {
     for (int i = 0; i < pw->body_count; i++) {
         kyPhysBody *b = &pw->bodies[i];
         if (!b->alive) continue;
-        kyRigidBody *r = &b->body;
-        if (r->inv_mass <= 0.0f) continue;
         if (!b->has_aabb) continue;
         if (pw->sap_event_count + 2 >= KY_PHYSICS_MAX_SAP_EVENTS) break;
         int base = pw->sap_event_count;
