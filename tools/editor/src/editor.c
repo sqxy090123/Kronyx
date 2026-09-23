@@ -427,7 +427,7 @@ const char *ky_editor_get_backend_name(const kyEditor *editor) {
     if (!editor) return "unknown";
     kyRendererBackend backend = ky_editor_get_backend(editor);
     switch (backend) {
-        case KY_RENDERER_GL: return "opengl3.3";
+        case KY_RENDERER_GL: return "opengl-es3";
         case KY_RENDERER_VULKAN: return "vulkan1.2";
         default: return "none";
     }
