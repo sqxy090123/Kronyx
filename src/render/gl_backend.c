@@ -469,7 +469,7 @@ static void gl_destroy(void *impl) {
 }
 
 static const char *gl_name(void) {
-    return "opengl3.3";
+    return "opengl-es3";
 }
 
 static void *gl_create_shader(void *impl, const kyShaderSource *src) {
