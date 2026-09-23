@@ -289,10 +289,10 @@ static int ky_check_self_integrity(void) {
     size_t r = fread(magic, 1, 4, f);
     fclose(f);
 
-    /* Mach-O magic: 0xfeedface / 0xfeedfacf (64-bit) */
+    /* Mach-O magic: 0xfeedface (32-bit) / 0xfeedfacf (64-bit), little-endian */
     return (r == 4 &&
             (memcmp(magic, "\xCE\xFA\xED\xFE", 4) == 0 ||
-             memcmp(magic, "\xFE\xED\xFA\xCF", 4) == 0)) ? 1 : 0;
+             memcmp(magic, "\xCF\xFA\xED\xFE", 4) == 0)) ? 1 : 0;
 }
 #else
 static int ky_check_self_integrity(void) {

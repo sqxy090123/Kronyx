@@ -81,15 +81,18 @@ jobs:
           -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
           -DVCPKG_TARGET_TRIPLET=x64-windows
 
-    - name: Build
+    - name: Build (Windows)
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        # Native shell keeps backslash workspace paths intact; bash mangles them.
+        cmake --build "${env:GITHUB_WORKSPACE}\build" -j2 --config ${{ matrix.cmake_build_type }}
+
+    - name: Build (Linux/Mac)
+      if: runner.os != 'Windows'
       shell: bash
       run: |
-        if [ "${{ runner.os }}" = "Windows" ]; then
-          # Visual Studio multi-config generator: build the matrix config explicitly.
-          cmake --build ${{ github.workspace }}/build -j2 --config ${{ matrix.cmake_build_type }}
-        else
-          cmake --build ${{ github.workspace }}/build -j2
-        fi
+        cmake --build "${GITHUB_WORKSPACE}/build" -j2
 
     - name: Run tests
       working-directory: ${{ github.workspace }}/build
