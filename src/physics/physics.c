@@ -23,6 +23,8 @@ kyPhysicsWorld *ky_physics_create(kyVec3 gravity) {
     memset(pw->pairs, 0, sizeof(pw->pairs));
     memset(pw->force_fields, 0, sizeof(pw->force_fields));
     memset(pw->sap_active, 0, sizeof(pw->sap_active));
+    pw->broad_fn = NULL;
+    pw->narrow_fn = NULL;
     return pw;
 }
 
@@ -193,24 +195,31 @@ void ky_physics_step(kyPhysicsWorld *pw, float dt) {
 
     /* SAP broadphase to find potential collision pairs (or use custom hook) */
     if (pw->broad_fn) {
-        kyExtents exts[KY_PHYSICS_MAX_BODIES];
-        uint32_t ids[KY_PHYSICS_MAX_BODIES];
-        int n = 0;
-        for (int i = 0; i < pw->body_count; i++) {
-            if (!pw->bodies[i].alive || !pw->bodies[i].has_aabb) continue;
-            exts[n].min = pw->bodies[i].aabb_min;
-            exts[n].max = pw->bodies[i].aabb_max;
-            ids[n] = (uint32_t)(i + 1);
-            n++;
+        /* Allocate on the heap: 1024 × 24B extents + 1024 × 4B ids ≈ 32KB,
+         * which would overflow the default stack in Debug builds where
+         * the stack is instrumented with guard pages. */
+        kyExtents *exts = (kyExtents *)calloc(KY_PHYSICS_MAX_BODIES, sizeof(kyExtents));
+        uint32_t *ids = (uint32_t *)calloc(KY_PHYSICS_MAX_BODIES, sizeof(uint32_t));
+        if (exts && ids) {
+            int n = 0;
+            for (int i = 0; i < pw->body_count; i++) {
+                if (!pw->bodies[i].alive || !pw->bodies[i].has_aabb) continue;
+                exts[n].min = pw->bodies[i].aabb_min;
+                exts[n].max = pw->bodies[i].aabb_max;
+                ids[n] = (uint32_t)(i + 1);
+                n++;
+            }
+            pw->pair_count = 0;
+            pw->broad_fn(exts, ids, n,
+                         &pw->pairs[0].body_a, &pw->pairs[0].body_b,
+                         &pw->pair_count, KY_PHYSICS_MAX_PAIRS);
+            /* Custom broadphase only fills body_a/body_b; set alive so the
+             * built-in narrowphase (if no narrow_fn) will process the pairs. */
+            for (int i = 0; i < pw->pair_count; i++)
+                pw->pairs[i].alive = 1;
         }
-        pw->pair_count = 0;
-        pw->broad_fn(exts, ids, n,
-                     &pw->pairs[0].body_a, &pw->pairs[0].body_b,
-                     &pw->pair_count, KY_PHYSICS_MAX_PAIRS);
-        /* Custom broadphase only fills body_a/body_b; set alive so the
-         * built-in narrowphase (if no narrow_fn) will process the pairs. */
-        for (int i = 0; i < pw->pair_count; i++)
-            pw->pairs[i].alive = 1;
+        free(exts);
+        free(ids);
     } else {
         sap_build_events(pw);
         sap_find_pairs(pw);
