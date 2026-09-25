@@ -59,6 +59,7 @@ int main(void) {
     ASSERT(strcmp(ky_pack_target_name(KY_PACK_APK), "apk") == 0, "target name apk");
 
     char err[512];
+    int rc;
 
     /* invalid args */
     ASSERT(ky_pack(NULL, KY_PACK_EXE, err, sizeof(err)) != 0, "null desc rejected");
@@ -75,33 +76,30 @@ int main(void) {
      * Requires `cc` on PATH and a prebuilt static engine lib at
      * $KY_PACK_ENGINE_ROOT/build/libky_engine.a. On Windows CI neither
      * is available, so skip gracefully instead of failing. */
-    int rc;
-#if defined(_WIN32)
-    SKIP("exe pack: requires Unix toolchain (cc + static lib)");
-#else
+#if !defined(_WIN32)
     if (!cmd_exists("cc")) {
         SKIP("exe pack: cc compiler not available on this platform");
     } else {
-#endif
-    const char *exe_path = "/tmp/kypack_test_game";
-    desc.out_path = exe_path;
-    rc = ky_pack(&desc, KY_PACK_EXE, err, sizeof(err));
-    ASSERT(rc == 0, "exe pack succeeds");
-    if (rc != 0) printf("  err: %s\n", err);
-    ASSERT(file_exists(exe_path), "exe file exists");
-    if (file_exists(exe_path)) {
-        char run_cmd[512];
-        snprintf(run_cmd, sizeof(run_cmd), "%s > /tmp/kypack_exe_out.txt 2>&1", exe_path);
-        int exit_code = system(run_cmd);
-        ASSERT(exit_code == 0, "packaged exe runs successfully");
-        FILE *f = fopen("/tmp/kypack_exe_out.txt", "r");
-        char buf[256] = {0};
-        if (f) { size_t n = fread(buf, 1, sizeof(buf) - 1, f); fclose(f); (void)n; }
-        ASSERT(strstr(buf, "hello from packaged game") != NULL, "exe output contains game print");
-        ASSERT(strstr(buf, "42") != NULL, "exe output contains number");
+        const char *exe_path = "/tmp/kypack_test_game";
+        desc.out_path = exe_path;
+        rc = ky_pack(&desc, KY_PACK_EXE, err, sizeof(err));
+        ASSERT(rc == 0, "exe pack succeeds");
+        if (rc != 0) printf("  err: %s\n", err);
+        ASSERT(file_exists(exe_path), "exe file exists");
+        if (file_exists(exe_path)) {
+            char run_cmd[512];
+            snprintf(run_cmd, sizeof(run_cmd), "%s > /tmp/kypack_exe_out.txt 2>&1", exe_path);
+            int exit_code = system(run_cmd);
+            ASSERT(exit_code == 0, "packaged exe runs successfully");
+            FILE *f = fopen("/tmp/kypack_exe_out.txt", "r");
+            char buf[256] = {0};
+            if (f) { size_t n = fread(buf, 1, sizeof(buf) - 1, f); fclose(f); (void)n; }
+            ASSERT(strstr(buf, "hello from packaged game") != NULL, "exe output contains game print");
+            ASSERT(strstr(buf, "42") != NULL, "exe output contains number");
+        }
     }
-#if !defined(_WIN32)
-    }
+#else
+    SKIP("exe pack: requires Unix toolchain (cc + static lib)");
 #endif
 
     /* npm */
@@ -124,12 +122,13 @@ int main(void) {
     }
 
     /* jar: requires `zip` on PATH. Skip gracefully when missing. */
-    const char *jar_path = "/tmp/kypack_test.jar";
-    desc.out_path = jar_path;
-    rc = ky_pack(&desc, KY_PACK_JAR, err, sizeof(err));
-    if (rc != 0 && cmd_exists("zip") == 0) {
+#if !defined(_WIN32)
+    if (!cmd_exists("zip")) {
         SKIP("jar pack: zip not installed on this platform");
     } else {
+        const char *jar_path = "/tmp/kypack_test.jar";
+        desc.out_path = jar_path;
+        rc = ky_pack(&desc, KY_PACK_JAR, err, sizeof(err));
         ASSERT(rc == 0, "jar pack succeeds");
         if (rc != 0) printf("  err: %s\n", err);
         ASSERT(file_exists(jar_path), "jar file exists");
@@ -148,6 +147,9 @@ int main(void) {
             }
         }
     }
+#else
+    SKIP("jar pack: requires zip on PATH (Unix tooling)");
+#endif
 
     printf("\n=== %d tests ran, %d failures ===\n", assertions, failures);
     return failures == 0 ? 0 : 1;
