@@ -17,19 +17,12 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#include <wincrypt.h>
 #include <bcrypt.h>
-#ifndef BCRYPT_RANDOM_ALGORITHM
-#define BCRYPT_RANDOM_ALGORITHM L"RANDOM"
-#endif
 #ifndef NT_SUCCESS
 #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
 #endif
 #pragma comment(lib, "bcrypt.lib")
-#pragma comment(lib, "crypt32.lib")
-/* BCryptCalcHmacKeySize and BCryptGenerateRandomBytes are not declared in
-   some Windows SDK versions. Use BCRYPT_OBJECT_LENGTH for key size and
-   CryptGenRandom for the salt, avoiding BCRYPT_BUFFER entirely. */
+/* BCryptCalcHmacKeySize is not declared in some Windows SDK versions. */
 static DWORD ky_bcrypt_get_key_size(BCRYPT_ALG_HANDLE hAlg) {
     DWORD objLen = 0;
     if (NT_SUCCESS(BCryptGetProperty(hAlg, BCRYPT_OBJECT_LENGTH,
@@ -37,19 +30,7 @@ static DWORD ky_bcrypt_get_key_size(BCRYPT_ALG_HANDLE hAlg) {
         return objLen;
     return 32;
 }
-static NTSTATUS ky_bcrypt_gen_random_bytes(BCRYPT_ALG_HANDLE hAlg,
-                                           PUCHAR buf, ULONG len) {
-    (void)hAlg;
-    HCRYPTPROV hProv = 0;
-    if (!CryptAcquireContext(&hProv, NULL, NULL,
-                             PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
-        return (NTSTATUS)E_FAIL;
-    BOOL ok = CryptGenRandom(hProv, len, buf);
-    CryptReleaseContext(hProv, 0);
-    return ok ? 0 : (NTSTATUS)E_FAIL;
-}
 #define BCryptCalcHmacKeySize(hAlg)  ky_bcrypt_get_key_size((hAlg))
-#define BCryptGenerateRandomBytes(a,b,l) ky_bcrypt_gen_random_bytes((a),(b),(l))
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
 #include <Security/Security.h>
@@ -143,13 +124,11 @@ cleanup:
 }
 
 static int ky_generate_salt(uint8_t *salt, size_t len) {
-    BCRYPT_ALG_HANDLE hAlg = NULL;
-    NTSTATUS status = BCryptOpenAlgorithmProvider(&hAlg,
-        BCRYPT_RANDOM_ALGORITHM, NULL, 0);
-    if (NT_SUCCESS(status)) {
-        status = BCryptGenerateRandomBytes(hAlg, (PUCHAR)salt, (ULONG)len);
-        BCryptCloseAlgorithmProvider(hAlg, 0);
-    }
+    /* Use CNG BCryptGenRandom directly: the "RANDOM" algorithm name is a
+       CAPI CSP concept and does not exist in CNG, so opening it fails and
+       the old CryptAcquireContext fallback can also fail on CI runners. */
+    NTSTATUS status = BCryptGenRandom(NULL, (PUCHAR)salt, (ULONG)len,
+                                      BCRYPT_USE_SYSTEM_PFG);
     return NT_SUCCESS(status) ? 1 : 0;
 }
 
