@@ -127,6 +127,9 @@ static int ky_generate_salt(uint8_t *salt, size_t len) {
     /* Use CNG BCryptGenRandom directly: the "RANDOM" algorithm name is a
        CAPI CSP concept and does not exist in CNG, so opening it fails and
        the old CryptAcquireContext fallback can also fail on CI runners. */
+#ifndef BCRYPT_USE_SYSTEM_PFG
+#define BCRYPT_USE_SYSTEM_PFG 0x2
+#endif
     NTSTATUS status = BCryptGenRandom(NULL, (PUCHAR)salt, (ULONG)len,
                                       BCRYPT_USE_SYSTEM_PFG);
     return NT_SUCCESS(status) ? 1 : 0;
