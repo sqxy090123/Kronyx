@@ -11,10 +11,13 @@ Render/
 ├── render.h          # RHI 核心
 ├── 2d.h              # 2D 渲染
 ├── anim2d.h          # 帧动画
+├── particle2d.h      # 2D 粒子（G10）
 ├── render_backend.h  # 后端接口
 ├── console_backend.c  # 控制台后端
 ├── gl_backend.c      # OpenGL 后端
-└── sprite.h          # 精灵渲染
+├── 2d.c
+├── anim2d.c
+└── particle2d.c
 ```
 
 ## 渲染设备 (Render Device)

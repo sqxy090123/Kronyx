@@ -432,6 +432,11 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                 size_t total = hdr_sz + upvals * sizeof(kyValue);
                 void *p = ky_gc_heap_alloc(vm, KY_GC_OBJ_CLOSURE, (uint32_t)total);
                 if (p) {
+                    /* Store upval_count in GC header pad field so that
+                     * mark_object (gc.c) can correctly scan the upvals region
+                     * when marking a closure's upvalues. */
+                    kyGcObject *hdr = (kyGcObject *)((uint8_t *)p - sizeof(kyGcObject));
+                    hdr->pad = upvals;
                     memset(p, 0, total);
                     kyClosure *cl = (kyClosure *)p;
                     if (B < vm->proto_count) cl->proto = &vm->protos[B];
@@ -616,9 +621,13 @@ typedef struct kyCompileState {
 } kyCompileState;
 
 static void compile_emit(kyCompileState *cs, int opcode, int A, int B, int C) {
-    if (cs->code_count >= cs->code_cap) {
-        cs->code_cap = cs->code_cap ? cs->code_cap * 2 : 64;
-        cs->code = (int *)realloc(cs->code, (size_t)cs->code_cap * sizeof(int));
+    if (cs->code_count + 4 > cs->code_cap) {
+        int new_cap = cs->code_cap ? cs->code_cap * 2 : 64;
+        while (new_cap < cs->code_count + 4) new_cap *= 2;
+        int *tmp = (int *)realloc(cs->code, (size_t)new_cap * sizeof(int));
+        if (!tmp) return; /* OOM: skip emit, do not overflow old allocation */
+        cs->code = tmp;
+        cs->code_cap = new_cap;
     }
     int idx = cs->code_count;
     cs->code[idx++] = opcode;
@@ -630,8 +639,11 @@ static void compile_emit(kyCompileState *cs, int opcode, int A, int B, int C) {
 
 static int compile_add_const(kyCompileState *cs, double val) {
     if (cs->const_count >= cs->const_cap) {
-        cs->const_cap = cs->const_cap ? cs->const_cap * 2 : 16;
-        cs->constants = (double *)realloc(cs->constants, (size_t)cs->const_cap * sizeof(double));
+        int new_cap = cs->const_cap ? cs->const_cap * 2 : 16;
+        double *tmp = (double *)realloc(cs->constants, (size_t)new_cap * sizeof(double));
+        if (!tmp) return -1; /* OOM: return invalid index; callers emit nil */
+        cs->constants = tmp;
+        cs->const_cap = new_cap;
     }
     cs->constants[cs->const_count] = val;
     return cs->const_count++;
@@ -643,14 +655,16 @@ static int compile_add_string_n(kyCompileState *cs, const char *s, int len) {
             cs->strings[i][len] == '\0') return i;
     }
     if (cs->str_count >= cs->str_cap) {
-        cs->str_cap = cs->str_cap ? cs->str_cap * 2 : 16;
-        cs->strings = (char **)realloc(cs->strings, (size_t)cs->str_cap * sizeof(char *));
+        int new_cap = cs->str_cap ? cs->str_cap * 2 : 16;
+        char **tmp = (char **)realloc(cs->strings, (size_t)new_cap * sizeof(char *));
+        if (!tmp) return -1; /* OOM: return invalid index; caller emits nil */
+        cs->strings = tmp;
+        cs->str_cap = new_cap;
     }
     char *copy = (char *)malloc((size_t)len + 1);
-    if (copy) {
-        memcpy(copy, s, (size_t)len);
-        copy[len] = '\0';
-    }
+    if (!copy) return -1;
+    memcpy(copy, s, (size_t)len);
+    copy[len] = '\0';
     cs->strings[cs->str_count] = copy;
     return cs->str_count++;
 }

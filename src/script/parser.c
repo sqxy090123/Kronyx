@@ -150,7 +150,10 @@ static kyAstNode *parse_call(kyParser *p, kyAstNode *callee) {
         kyAstNode *arg = parse_expression(p, 1);
         if (arg) {
             int ac = n->as.call.arg_count++;
-            n->as.call.args = (kyAstNode **)realloc(n->as.call.args, (size_t)n->as.call.arg_count * sizeof(kyAstNode *));
+            kyAstNode **tmp = (kyAstNode **)realloc(n->as.call.args,
+                                                     (size_t)n->as.call.arg_count * sizeof(kyAstNode *));
+            if (!tmp) { free(arg); n->as.call.arg_count--; break; }
+            n->as.call.args = tmp;
             n->as.call.args[ac] = arg;
         }
         if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_COMMA) tok_advance(p);
@@ -215,7 +218,10 @@ static kyAstNode *parse_prefix(kyParser *p) {
                 kyAstNode *arg = parse_expression(p, 1);
                 if (arg) {
                     int ac = n->as.new_expr.arg_count++;
-                    n->as.new_expr.args = (kyAstNode **)realloc(n->as.new_expr.args, (size_t)n->as.new_expr.arg_count * sizeof(kyAstNode *));
+                    kyAstNode **tmp = (kyAstNode **)realloc(n->as.new_expr.args,
+                                                             (size_t)n->as.new_expr.arg_count * sizeof(kyAstNode *));
+                    if (!tmp) { free(arg); n->as.new_expr.arg_count--; break; }
+                    n->as.new_expr.args = tmp;
                     n->as.new_expr.args[ac] = arg;
                 }
                 if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_COMMA) tok_advance(p);
@@ -235,7 +241,10 @@ static kyAstNode *parse_prefix(kyParser *p) {
                 if (pt->kind == KYX_TK_IDENT) {
                     char *name = tok_dup(pt);
                     int pc = n->as.anon_func.param_count++;
-                    n->as.anon_func.params = (char **)realloc(n->as.anon_func.params, (size_t)n->as.anon_func.param_count * sizeof(char *));
+                    char **tmp = (char **)realloc(n->as.anon_func.params,
+                                                  (size_t)n->as.anon_func.param_count * sizeof(char *));
+                    if (!tmp) { free(name); n->as.anon_func.param_count--; break; }
+                    n->as.anon_func.params = tmp;
                     n->as.anon_func.params[pc] = name;
                     tok_advance(p);
                     if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_COMMA) tok_advance(p);
@@ -380,7 +389,13 @@ static kyAstNode *parse_expression(kyParser *p, int min_prec) {
             next_min_prec = 0;
         }
         n->as.binop.right = parse_expression(p, next_min_prec);
-        if (!n->as.binop.right) { free(n); return left; }
+        if (!n->as.binop.right) {
+            /* left is now owned by n; detach it so the caller can keep it,
+             * then free only the binop node shell and its op string. */
+            n->as.binop.left = NULL;
+            ast_free_node(n);
+            return left;
+        }
         left = n;
     }
     return left;
@@ -394,8 +409,12 @@ static kyAstNode *parse_block_content(kyParser *p) {
         kyAstNode *s = parse_statement(p);
         if (s) {
             if (n->as.block.count >= n->as.block.cap) {
-                n->as.block.cap *= 2;
-                n->as.block.stmts = (kyAstNode **)realloc(n->as.block.stmts, (size_t)n->as.block.cap * sizeof(kyAstNode *));
+                int new_cap = n->as.block.cap * 2;
+                kyAstNode **tmp = (kyAstNode **)realloc(n->as.block.stmts,
+                                                        (size_t)new_cap * sizeof(kyAstNode *));
+                if (!tmp) { ast_free(s); break; }
+                n->as.block.stmts = tmp;
+                n->as.block.cap = new_cap;
             }
             n->as.block.stmts[n->as.block.count++] = s;
         }
@@ -442,7 +461,10 @@ static kyAstNode *parse_statement(kyParser *p) {
             if (pt->kind == KYX_TK_IDENT) {
                 char *pname = tok_dup(pt);
                 int pc = n->as.func_decl.param_count++;
-                n->as.func_decl.params = (char **)realloc(n->as.func_decl.params, (size_t)n->as.func_decl.param_count * sizeof(char *));
+                char **tmp = (char **)realloc(n->as.func_decl.params,
+                                              (size_t)n->as.func_decl.param_count * sizeof(char *));
+                if (!tmp) { free(pname); n->as.func_decl.param_count--; break; }
+                n->as.func_decl.params = tmp;
                 n->as.func_decl.params[pc] = pname;
                 tok_advance(p);
                 if (!tok_at_eof(p) && tok_current(p)->kind == KYX_TK_COMMA) tok_advance(p);
@@ -608,8 +630,12 @@ kyAstNode *kyx_parser_parse(kyParser *p) {
         kyAstNode *stmt = parse_statement(p);
         if (stmt) {
             if (p->root->as.program.count >= p->root->as.program.cap) {
-                p->root->as.program.cap *= 2;
-                p->root->as.program.children = (kyAstNode **)realloc(p->root->as.program.children, (size_t)p->root->as.program.cap * sizeof(kyAstNode *));
+                int new_cap = p->root->as.program.cap * 2;
+                kyAstNode **tmp = (kyAstNode **)realloc(p->root->as.program.children,
+                                                        (size_t)new_cap * sizeof(kyAstNode *));
+                if (!tmp) { ast_free(stmt); break; }
+                p->root->as.program.children = tmp;
+                p->root->as.program.cap = new_cap;
             }
             p->root->as.program.children[p->root->as.program.count++] = stmt;
         }

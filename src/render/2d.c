@@ -1,5 +1,7 @@
 #include "kronyx/2d.h"
+#include "kronyx/particle2d.h"
 #include "kronyx/log.h"
+#include <math.h>
 #include <string.h>
 
 #define KY2D_MAX_SPRITES_BATCH 4096
@@ -259,6 +261,7 @@ static int cache_init(kyRenderDevice *rd) {
     g_cache.pipeline = ky_rd_create_pipeline(rd, &desc);
     if (!g_cache.pipeline) {
         ky_log_write(KY_LOG_ERROR, "2d: pipeline creation failed");
+        if (g_cache.shader) { ky_rd_destroy_shader(rd, g_cache.shader); g_cache.shader = NULL; }
         return -1;
     }
 
@@ -266,6 +269,11 @@ static int cache_init(kyRenderDevice *rd) {
     g_cache.ibo = ky_rd_create_buffer(rd, sizeof(g_ibo), NULL, 1);
     if (!g_cache.vbo || !g_cache.ibo) {
         ky_log_write(KY_LOG_ERROR, "2d: batch buffer creation failed");
+        if (g_cache.ibo)    ky_rd_destroy_buffer(rd, g_cache.ibo);
+        if (g_cache.vbo)    ky_rd_destroy_buffer(rd, g_cache.vbo);
+        ky_rd_destroy_pipeline(rd, g_cache.pipeline);
+        ky_rd_destroy_shader(rd, g_cache.shader);
+        g_cache.pipeline = NULL; g_cache.shader = NULL;
         return -1;
     }
 
@@ -273,6 +281,12 @@ static int cache_init(kyRenderDevice *rd) {
     g_cache.white = ky_rd_create_texture_2d(rd, 1, 1, 4, white_px);
     if (!g_cache.white) {
         ky_log_write(KY_LOG_ERROR, "2d: white texture creation failed");
+        ky_rd_destroy_buffer(rd, g_cache.ibo);
+        ky_rd_destroy_buffer(rd, g_cache.vbo);
+        ky_rd_destroy_pipeline(rd, g_cache.pipeline);
+        ky_rd_destroy_shader(rd, g_cache.shader);
+        g_cache.white = NULL; g_cache.ibo = NULL; g_cache.vbo = NULL;
+        g_cache.pipeline = NULL; g_cache.shader = NULL;
         return -1;
     }
     return 0;
@@ -341,14 +355,16 @@ static size_t fill_batch(const ky2dItem *batch, size_t batch_count,
     for (size_t s = 0; s < batch_count; s++) {
         size_t base_vertex = n * 4;
         if (ctx && ctx->sprite_gen) {
-            size_t vc = 0, ic = 0;
+            size_t vc = 4, ic = 6; /* cap: 1 quad per sprite slot */
             ctx->sprite_gen(&batch[s].tr, batch[s].sp,
-                            &g_vbo[base_vertex], &g_ibo[n * 6],
-                            &vc, &ic, ctx->user);
+                             &g_vbo[base_vertex], &g_ibo[n * 6],
+                             &vc, &ic, ctx->user);
             if (vc > 4 || ic > 6) {
                 ky_log_write(KY_LOG_WARN,
                              "2d: sprite_gen produced %zu verts / %zu idx "
                              "(max 4/6); clamping", vc, ic);
+                vc = 4;
+                ic = 6;
             }
         } else {
             emit_sprite(&batch[s], base_vertex);
@@ -473,6 +489,10 @@ static int render_frame(kyRenderDevice *rd, kyWorld *w, const kyCamera2D *cam,
         ky_cmd_set_texture(cl, 0, tex);
         ky_cmd_draw_indexed(cl, (uint32_t)(n * 6), 1);
         drawn += n;
+    }
+
+    if (ky_particle2d_registered()) {
+        ky_particle2d_render_pass(rd, cl, cam, cam_tr);
     }
 
     ky_rd_submit(rd, cl);

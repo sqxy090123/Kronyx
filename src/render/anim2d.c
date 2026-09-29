@@ -1,5 +1,6 @@
 #include "kronyx/anim2d.h"
 #include "kronyx/ecs.h"
+#include <math.h>
 #include <string.h>
 
 /* ── Public API ──────────────────────────────────────────────────── */
@@ -63,11 +64,16 @@ static void anim_update(kyWorld *w, float dt, void *user) {
         if (sp && a && a->cols > 0 && a->frames > 0 && a->fps > 0) {
             a->time += dt;
             float step = 1.0f / a->fps;
-            int   f    = (int)(a->time / step);
-            if (f < 0) f = 0;
             if (a->looping) {
-                a->current_frame = f % a->frames;
+                /* Keep time bounded to one loop so the int cast below is
+                 * always in range for any fps (prevents (int) overflow UB
+                 * after very long sessions). */
+                float total = step * (float)a->frames;
+                a->time = fmodf(a->time, total);
+                a->current_frame = (int)(a->time / step);
             } else {
+                int f = (int)(a->time / step);
+                if (f < 0) f = 0;
                 if ((unsigned)f >= (unsigned)a->frames) {
                     f = a->frames - 1;
                     a->time = step * f;

@@ -24,7 +24,7 @@
 - **ECS**: Archetype布局的实体组件系统，O(1)实体查找
 - **Scene**: 场景序列化与元数据管理（.ksn格式）
 - **Resource**: 资源注册表与引用计数管理
-- **Render**: RHI抽象 + 2D渲染管线 + 帧动画
+- **Render**: RHI抽象 + 2D渲染管线 + 帧动画 + 2D粒子
 - **Physics**: 刚体物理世界（SAP X轴broadphase + AABB narrowphase）
 - **Script**: kyx词法/语法/编译/VM/GC/绑定系统
 - **Pack**: 脚本与引擎打包工具（exe/npm/jar）
@@ -36,7 +36,7 @@
 
 ### 示例与工具
 - **Demo**: 2D平台人垂直切片，串联所有子系统
-- **Tests**: 完整的测试套件（20个测试目标）
+- **Tests**: 完整的测试套件（22个测试目标）
 
 ## 快速开始
 

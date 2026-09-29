@@ -87,6 +87,9 @@ KY_INLINE int ky_aabb_overlap(const kyAABB *a, const kyAABB *b) {
            a->min.y <= b->max.y && a->max.y >= b->min.y &&
            a->min.z <= b->max.z && a->max.z >= b->min.z;
 }
-KY_API int ky_ray_aabb(kyVec3 o, kyVec3 inv_d, float t_max, const kyAABB *b, float *out_t);
+/* Slab ray-vs-AABB. `d` is the ray direction (unit). Parallel axes are
+ * handled by checking the origin lies inside the slab. Returns 1 on hit and
+ * writes the nearest entry parameter to `out_t`; 0 on miss. */
+KY_API int ky_ray_aabb(kyVec3 o, kyVec3 d, float t_max, const kyAABB *b, float *out_t);
 
 #endif

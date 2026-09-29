@@ -54,6 +54,7 @@ add_library(ky_engine STATIC
   src/render/gl_backend.c
   src/render/2d.c
   src/render/anim2d.c
+  src/render/particle2d.c
   src/physics/physics.c
   src/physics/force_field.c
   src/script/script.c
@@ -137,6 +138,10 @@ if(KYR_BUILD_TESTS)
   target_link_libraries(ky_test_input PRIVATE ky_core)
   ky_add_test(input ky_test_input)
 
+  add_executable(ky_test_core_quality tests/test_core_quality.c)
+  target_link_libraries(ky_test_core_quality PRIVATE ky_core)
+  ky_add_test(core_quality ky_test_core_quality)
+
   add_executable(ky_test_demo_loop tests/test_demo_loop.c)
   target_include_directories(ky_test_demo_loop PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/demo)
   target_link_libraries(ky_test_demo_loop PRIVATE ky_platformer ky_engine ky_core)
@@ -175,6 +180,9 @@ if(KYR_BUILD_TESTS)
   target_link_libraries(ky_test_extreme PRIVATE ky_engine ky_core)
   ky_add_test(extreme ky_test_extreme)
 
+  add_executable(ky_test_particle tests/test_particle.c)
+  target_link_libraries(ky_test_particle PRIVATE ky_engine ky_core)
+  ky_add_test(particle ky_test_particle)
 
 endif()
 

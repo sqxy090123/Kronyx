@@ -336,11 +336,6 @@ void ky_physics_cast_ray(const kyPhysicsWorld *pw, kyVec3 origin, kyVec3 dir,
     /* Guard against zero-direction ray: inv_dir would be infinite */
     if (dir.x == 0.0f && dir.y == 0.0f && dir.z == 0.0f) return;
 
-    kyVec3 inv_dir;
-    inv_dir.x = dir.x != 0.0f ? 1.0f / dir.x : (dir.x > 0 ? 1e30f : -1e30f);
-    inv_dir.y = dir.y != 0.0f ? 1.0f / dir.y : (dir.y > 0 ? 1e30f : -1e30f);
-    inv_dir.z = dir.z != 0.0f ? 1.0f / dir.z : (dir.z > 0 ? 1e30f : -1e30f);
-
     float best_t = max_t;
     uint32_t best_id = 0;
     kyVec3 best_normal = ky_vec3_zero();
@@ -379,7 +374,7 @@ void ky_physics_cast_ray(const kyPhysicsWorld *pw, kyVec3 origin, kyVec3 dir,
         if (col && col->shape == KY_SHAPE_BOX && b->aabb_min.x < b->aabb_max.x) {
             kyAABB aabb = { b->aabb_min, b->aabb_max };
             float t_aabb;
-            if (ky_ray_aabb(origin, inv_dir, best_t, &aabb, &t_aabb) && t_aabb < best_t) {
+            if (ky_ray_aabb(origin, dir, best_t, &aabb, &t_aabb) && t_aabb < best_t) {
                 best_t = t_aabb;
                 best_id = (uint32_t)(i + 1);
             }

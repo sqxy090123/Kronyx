@@ -1,5 +1,6 @@
 #include "kronyx/log.h"
 #include <stdarg.h>
+#include <stdio.h>
 #include <time.h>
 
 static kyLogLevel g_log_level = KY_LOG_INFO;
@@ -52,8 +53,14 @@ void ky_log_write(kyLogLevel level, const char *fmt, ...) {
     char buf[2048];
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, ap);
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
+    if (n < 0) {
+        snprintf(buf, sizeof(buf), "(log format error)");
+    } else if ((size_t)n >= sizeof(buf)) {
+        /* truncated: keep the prefix, guarantee NUL termination */
+        buf[sizeof(buf) - 1] = '\0';
+    }
     if (g_sink) {
         g_sink(level, buf, g_sink_ud);
     } else {

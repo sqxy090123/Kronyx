@@ -61,14 +61,17 @@ void ky_hashmap_init(kyHashMap *m, kyAllocator *alloc, size_t initial_cap) {
 }
 
 void ky_hashmap_deinit(kyHashMap *m) {
+    if (!m || !m->entries) {
+        if (m) m->count = m->cap = m->tomb_count = 0;
+        return;
+    }
     for (size_t i = 0; i < m->cap; ++i) {
-        if (m->entries[i].state == KY_HASHMAP_STATE_USED) {
-            if (m->entries[i].owned) {
-                ky_mem_free(m->alloc, (void *)m->entries[i].key);
-            }
-            m->entries[i].state = KY_HASHMAP_STATE_EMPTY;
-            m->entries[i].key = NULL;
-            m->entries[i].value = NULL;
+        kyHashEntry *e = &m->entries[i];
+        if (e->state == KY_HASHMAP_STATE_USED) {
+            if (e->owned) ky_mem_free(m->alloc, (void *)e->key);
+            e->state = KY_HASHMAP_STATE_EMPTY;
+            e->key = NULL;
+            e->value = NULL;
         }
     }
     ky_mem_free(m->alloc, m->entries);
@@ -127,6 +130,9 @@ static void hashmap_set_impl(kyHashMap *m, const char *key, void *value, int own
         if (m->entries[slot].state == KY_HASHMAP_STATE_TOMB &&
             insert_slot == (size_t)-1) {
             insert_slot = slot;
+            /* Keep walking: a live entry with the same key later in the
+               chain must be updated in place, not shadowed by a new copy
+               at the tombstone. */
         }
         slot = (slot + 1) & mask;
     }

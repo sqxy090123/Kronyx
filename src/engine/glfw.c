@@ -70,6 +70,10 @@ kyGlfwWindow *ky_glfw_create_window(const char *title, int w, int h) {
 
 void ky_glfw_destroy_window(kyGlfwWindow *win) {
     if (!win) return;
+    glfwSetWindowUserPointer(win->w, NULL); /* detach before destroy: cursor
+        callback dereferences the user pointer; leaving it set risks a use-
+        of-freed-struct if the OS delivers a late event between free() and
+        glfwDestroyWindow() completing. */
     glfwDestroyWindow(win->w);
     free(win);
 }

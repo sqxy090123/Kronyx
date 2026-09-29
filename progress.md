@@ -88,7 +88,7 @@ G1 是整条产品线的主轴。G2 已在 G1 绿后落地最小集。
 | G7 | **Sprite 帧动画** ✅ | G1 | 时间轴 + 图集 UV，不接骨骼 |
 | G8 | **碰撞回调导出** ✅ | G1 | 物理 contact → `ky_event_*`，供 demo/脚本 |
 | G9 | 关节 / constraints | 3D 或复杂 2D 需要时 | 现物理无 joint API |
-| G10 | 粒子 | G7 之后 | |
+| G10 | **粒子** ✅ | G7 之后 | `particle2d.h/c`：emitter 组件 + particle-update 系统 + 16384 静态池 + xorshift32 确定性模拟 + `render_frame` 内置粒子 pass（console/GL 零改动）；`test_particle.c` 30 断言；demo role 跳跃/落地脉冲 |
 | G11 | 音频 | 至少 G1 可玩 | 现无 `audio.h`，从零开模块需单独规格 |
 | G12 | Vulkan 后端 | 真 GPU 环境 | 枚举已预留 `KY_RENDERER_VULKAN`；软渲染环境不做 |
 | G13 | 3D Renderer 组件 | Vulkan 或真 GL 3D 需求 | 2D 管线不冒充 3D |
@@ -115,7 +115,7 @@ G1 是整条产品线的主轴。G2 已在 G1 绿后落地最小集。
 | 命令列表无 cancel，begin 不 submit 泄漏 | `render.c` | 编辑器/demo 出现中途丢帧时 |
 | 2d GPU 资源按单 RenderDevice 缓存 | `src/render/2d.c` | 多设备或销毁后复用时 |
 | SAP 只扫 X 轴 | physics | 漏碰撞成为 demo 事实时 |
-| 无 joints / 动画 / 粒子 / 音频 | — | 见 P3 |
+| 无 joints / 粒子 / 音频 | — | G10 粒子已完成，见 P3；joints/音频见 P3 |
 | 编辑器默认不进 CI | CMake | G5 开工时打开 |
 | `ky_test_render` EGL 偶发 segfault | 环境 | 不修业务；`ctest -j1`，失败重跑 |
 | `ky_demo` 无显示时 GLFW init 失败 | 环境 | 预期；逻辑测试走 ctest |
@@ -181,7 +181,19 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 - `OP_GETGLOBAL` / `OP_NATIVECALL` native 查找改用独立 `native_count` 计数，修正原代码用 `proto_count` 做上限的越界风险
 - `compile_expression` 赋值操作符检测从 5 次 `strcmp` 链改为两字符直接比较
 
-**下一刀：P3 按顺序的下一个生成对象 G10 粒子（前置 G7 已满足）；或按实际需要继续代码体检/用户指派维护。**
+**已完成：G10 2D 粒子系统。**
+交付：
+- `include/kronyx/particle2d.h` + `src/render/particle2d.c`：`kyEmitter` 组件（发射速率/形状/初速/寿命/颜色插值/重力/drag/纹理/seed）+ `ky_particle2d_register(w)`（注册 "emitter" 组件 + "particle-update" 系统，幂等）
+- 模拟：xorshift32 LCG（可设 seed，确定性可复现）、静态粒子池 `KY_PARTICLE_MAX=16384`、寿命/重力/drag 推进、池满静默截断
+- 渲染：`ky_particle2d_render_pass(rd,cl,cam,cam_tr)` 生成 quad 顶点/索引到模块 static staging，per-device GPU 资源 lazy init；`2d.c` `render_frame` 在 sprite 批处理后、submit 前调用（`ky_particle2d_registered()` 守卫）；console / GL 后端零改动
+- despawn 回收：ECS dtor 无实体 id，`reap_dead_owners` 在每次 step 前扫池，owner id 出现在 `w->free_ids` 即回收
+- `src/demo/platformer_world.{h,c}`：role 挂 emitter，跳跃/落地脉冲（emit_pulses 计时器），`ky_world_sort_systems` + `ky_world_step` 纳入 tick；`ky_demo` 无头冒烟 exit=0
+- `tests/test_particle.c`（30 断言）：注册幂等 / 默认值 / 发射计数 / 寿命回收 / dt=0 / 禁用发射器 / 同 seed 确定性 / 池满截断 / despawn 回收 / render pass 冒烟
+- CMake：`particle2d.c` 入 `ky_engine`，`ky_test_particle` 挂 ctest（目标 21→22）
+
+普通构建 22/22 绿；ASan（`detect_leaks=0`）22/22 绿。
+
+**下一刀：P3 按顺序的下一个生成对象 G11 音频（从零开模块需单独规格）；或按实际需要继续代码体检/用户指派维护。**
 
 **已完成：安全漏洞扫描与修复——`src/script/vm.c` + `src/script/parser.c`**
 发现并修复 3 个严重 bug：

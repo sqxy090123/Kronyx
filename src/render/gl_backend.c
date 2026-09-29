@@ -282,9 +282,17 @@ static void *gl_create_texture(void *impl, int w, int h, int ch, const void *px)
     glGenTextures(1, &t->id);
     if (t->id == 0) { free(t); return NULL; }
     glBindTexture(GL_TEXTURE_2D, t->id);
-    GLenum fmt = (ch >= 3) ? GL_RGBA : GL_LUMINANCE;
-    glTexImage2D(GL_TEXTURE_2D, 0, (ch >= 3) ? GL_RGBA : GL_LUMINANCE, w, h, 0,
-                 fmt, GL_UNSIGNED_BYTE, px);
+    /* GLES3 removed GL_LUMINANCE/GL_LUMINANCE_ALPHA internal formats;
+     * map 1-channel to GL_R8 and 2-channel to GL_RG8 instead. */
+    GLenum ifmt;
+    switch (ch) {
+        case 1:  ifmt = GL_R8;    break;
+        case 2:  ifmt = GL_RG8;   break;
+        default: ifmt = GL_RGBA;  break;  /* ch >= 3 */
+    }
+    glTexImage2D(GL_TEXTURE_2D, 0, ifmt, w, h, 0,
+                 (ch == 1) ? GL_RED : ((ch == 2) ? GL_RG : GL_RGBA),
+                 GL_UNSIGNED_BYTE, px);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);

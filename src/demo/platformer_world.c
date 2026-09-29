@@ -1,4 +1,5 @@
 #include "platformer_world.h"
+#include "kronyx/particle2d.h"
 #include "kronyx/log.h"
 #include <string.h>
 #include <math.h>
@@ -118,6 +119,36 @@ int platformer_setup(PlatformerWorld *out, kyRendererBackend rd_backend) {
 
     /* Camera entity. */
     out->camera = ky_world_spawn(out->world);
+
+    /* Particle system: register emitter component + update system so the
+     * role's jump/land effects can be driven. G10 — see particle-system spec. */
+    if (ky_particle2d_register(out->world) != 0) {
+        platformer_teardown(out);
+        return -7;
+    }
+    out->tid_emitter = ky_world_component_type_by_name(out->world, "emitter");
+
+    /* Emitter attached to the role: small upward burst on jumps and
+     * landing. Configured here; firing happens on tick(). */
+    {
+        kyEmitter *em = (kyEmitter *)ky_world_add_component(out->world, out->role, out->tid_emitter);
+        if (em) {
+            *em = ky_emitter_new();
+            em->enabled   = 1;
+            em->emit_rate = 0.0f;   /* off until a jump/land pulse sets it */
+            em->shape     = KY_EMIT_POINT;
+            em->direction = -1.57079632679f; /* +Y (up) */
+            em->speed0    = 1.5f;
+            em->speed1    = 3.0f;
+            em->life0     = 0.4f;
+            em->life1     = 0.8f;
+            em->size0     = 0.08f;
+            em->size1     = 0.16f;
+            em->color_from = (kyVec4){1.0f, 0.9f, 0.5f, 1.0f};
+            em->color_to   = (kyVec4){1.0f, 0.5f, 0.2f, 0.0f};
+            em->gravity    = (kyVec2){0.0f, -6.0f};
+        }
+    }
     kyCamera2D *cam = (kyCamera2D *)ky_world_add_component(out->world, out->camera, out->tid_camera);
     if (!cam) { platformer_teardown(out); return -12; }
     cam->active      = 1;
@@ -163,6 +194,12 @@ int platformer_tick(PlatformerWorld *pw, float dt, float vx_target, int jump) {
     if (jump && pw->grounded) {
         vy = PLATFORMER_JUMP_VY;
         pw->grounded = 0;
+        /* G10: pulse the role's emitter for ~0.3 s on takeoff. */
+        kyEmitter *em = (kyEmitter *)ky_world_get_component(pw->world, pw->role, pw->tid_emitter);
+        if (em && em->enabled) {
+            em->emit_rate = 60.0f;
+            pw->emit_pulses = 0.3f;
+        }
     }
 
     /* Integrate: horizontal constant velocity, vertical under gravity. */
@@ -175,7 +212,24 @@ int platformer_tick(PlatformerWorld *pw, float dt, float vx_target, int jump) {
     if (py <= rest && vy < 0.0f) {
         py = rest;
         vy = 0.0f;
+        if (!pw->grounded) {
+            /* G10: land pulse. */
+            kyEmitter *em = (kyEmitter *)ky_world_get_component(pw->world, pw->role, pw->tid_emitter);
+            if (em && em->enabled) {
+                em->direction = -1.57079632679f; /* up on landing too */
+                em->emit_rate = 40.0f;
+                pw->emit_pulses = 0.2f;
+            }
+        }
         pw->grounded = 1;
+    }
+    if (pw->emit_pulses > 0.0f) {
+        pw->emit_pulses -= dt;
+        if (pw->emit_pulses <= 0.0f) {
+            kyEmitter *em = (kyEmitter *)ky_world_get_component(pw->world, pw->role, pw->tid_emitter);
+            if (em) em->emit_rate = 0.0f;
+            pw->emit_pulses = 0.0f;
+        }
     }
 
     pw->vx = vx;
@@ -188,6 +242,12 @@ int platformer_tick(PlatformerWorld *pw, float dt, float vx_target, int jump) {
     /* Camera follows the role. */
     kyCamera2D *cam = (kyCamera2D *)ky_world_get_component(pw->world, pw->camera, pw->tid_camera);
     if (cam) cam->pos = (kyVec2){px, py + PLATFORMER_CAM_OFFSET_Y};
+
+    /* Run ECS systems (particle update, animator, etc.) before render.
+     * ky_world_step runs systems in registration order; sort by order to
+     * guarantee particle-update (order 1) runs after physics/animator. */
+    ky_world_sort_systems(pw->world);
+    ky_world_step(pw->world, dt);
 
     /* Render one frame. ky2d_render_world_auto submits the whole frame; an
      * extra ky_rd_present from here would double-issue on backends that do

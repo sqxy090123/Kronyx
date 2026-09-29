@@ -84,12 +84,11 @@ static void test_ray_aabb(void) {
     box.max = ky_vec3(1, 1, 1);
     kyVec3 o = ky_vec3(0, 0, 5);
     kyVec3 d = ky_vec3(0, 0, -1);
-    kyVec3 inv_d = ky_vec3(1.0f / d.x, 1.0f / d.y, 1.0f / d.z);
     float t = 0;
-    KY_CHECK(ky_ray_aabb(o, inv_d, 100.0f, &box, &t) == 1);
+    KY_CHECK(ky_ray_aabb(o, d, 100.0f, &box, &t) == 1);
     KY_CHECK_NEAR(t, 4.0f, 1e-5f);
     kyVec3 o2 = ky_vec3(0, 10, 5);
-    KY_CHECK(ky_ray_aabb(o2, inv_d, 100.0f, &box, &t) == 0);
+    KY_CHECK(ky_ray_aabb(o2, d, 100.0f, &box, &t) == 0);
 }
 
 static void test_lerp_clamp(void) {

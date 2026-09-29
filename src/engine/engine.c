@@ -60,6 +60,7 @@ int ky_engine_init(int width, int height, const char *title) {
 }
 
 int ky_engine_run(float (*update)(float dt), void (*render)(void)) {
+    if (!g_window || !g_window->w) return -1; /* init not called or already shut down */
     double last_time = glfwGetTime();
     while (!glfwWindowShouldClose(g_window->w)) {
         double now = glfwGetTime();

@@ -177,12 +177,21 @@ kyVec3 ky_mat4_mul_dir(const kyMat4 *m, kyVec3 d) {
     return ky_vec3(v.x, v.y, v.z);
 }
 
-int ky_ray_aabb(kyVec3 o, kyVec3 inv_d, float t_max, const kyAABB *b, float *out_t) {
-    const float *oo = &o.x, *idd = &inv_d.x, *mn = &b->min.x, *mx = &b->max.x;
-    float tmin = -1e30f, tmax = 1e30f;
+int ky_ray_aabb(kyVec3 o, kyVec3 d, float t_max, const kyAABB *b, float *out_t) {
+    /* Slab test. d is the (unit) direction. A slab with zero extent along
+       d means the ray is parallel to that axis; if the origin is outside the
+       slab the ray misses, otherwise it is unbounded on that axis. */
+    const float *oo = &o.x, *dd = &d.x, *mn = &b->min.x, *mx = &b->max.x;
+    float tmin = 0.0f, tmax = t_max;
     for (int i = 0; i < 3; ++i) {
-        float t1 = (mn[i] - oo[i]) * idd[i];
-        float t2 = (mx[i] - oo[i]) * idd[i];
+        if (ky_math_absf(dd[i]) < 1e-8f) {
+            /* Parallel: must lie inside the slab. */
+            if (oo[i] < mn[i] || oo[i] > mx[i]) return 0;
+            continue;
+        }
+        float inv = 1.0f / dd[i];
+        float t1 = (mn[i] - oo[i]) * inv;
+        float t2 = (mx[i] - oo[i]) * inv;
         if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
         if (t1 > tmin) tmin = t1;
         if (t2 < tmax) tmax = t2;

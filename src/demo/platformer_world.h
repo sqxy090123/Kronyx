@@ -32,6 +32,9 @@ typedef struct PlatformerWorld {
     uint32_t tid_transform;
     uint32_t tid_sprite;
     uint32_t tid_camera;
+    uint32_t tid_emitter;   /* particle2d "emitter" component, UINT32_MAX if absent */
+
+    float emit_pulses;       /* remaining seconds of jump/land emission */
 
     kyTexture *role_tex;   /* owned; NULL = white sprite (asset missing / build fail) */
 

@@ -43,6 +43,7 @@ void *ky_array_emplace(kyArray *a) {
 void *ky_array_push(kyArray *a, const void *elem) {
     void *slot = ky_array_emplace(a);
     if (elem) memcpy(slot, elem, a->elem_size);
+    else memset(slot, 0, a->elem_size);
     return slot;
 }
 
