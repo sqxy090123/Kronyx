@@ -1,0 +1,1 @@
+/usr/bin/cc -g -fsanitize=address,undefined CMakeFiles/ky_demo.dir/src/demo/main.c.o -o ky_demo  -Wl,-rpath,"\$ORIGIN" libky_platformer.a libky_runtime.a libky_antitamper.a libky_engine.a libky_core.a /usr/lib/x86_64-linux-gnu/libEGL.so /usr/lib/x86_64-linux-gnu/libGLESv2.so /usr/lib/x86_64-linux-gnu/libglfw.so -lX11 -lXi -lXrandr -lm -ldl /usr/lib/x86_64-linux-gnu/libcrypto.so 

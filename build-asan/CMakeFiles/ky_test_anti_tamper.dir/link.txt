@@ -1,0 +1,1 @@
+/usr/bin/cc -g -fsanitize=address,undefined CMakeFiles/ky_test_anti_tamper.dir/tests/test_anti_tamper.c.o -o ky_test_anti_tamper  libky_antitamper.a -ldl libky_core.a -lm /usr/lib/x86_64-linux-gnu/libcrypto.so 

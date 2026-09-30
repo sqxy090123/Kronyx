@@ -1,0 +1,1 @@
+/usr/bin/cc -g -fsanitize=address,undefined CMakeFiles/ky_test_extreme.dir/tests/test_extreme.c.o -o ky_test_extreme  libky_engine.a libky_core.a -lm /usr/lib/x86_64-linux-gnu/libEGL.so /usr/lib/x86_64-linux-gnu/libGLESv2.so 

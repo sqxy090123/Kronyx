@@ -27,6 +27,7 @@
 - **Render**: RHI抽象 + 2D渲染管线 + 帧动画 + 2D粒子
 - **Physics**: 刚体物理世界（SAP X轴broadphase + AABB narrowphase）
 - **Script**: kyx词法/语法/编译/VM/GC/绑定系统
+- **Audio**: PCM SFX合成 + 混音(null sink), 无系统音频库依赖
 - **Pack**: 脚本与引擎打包工具（exe/npm/jar）
 
 ### 运行时模块

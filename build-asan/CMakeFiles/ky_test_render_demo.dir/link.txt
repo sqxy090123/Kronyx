@@ -1,0 +1,1 @@
+/usr/bin/cc -g -fsanitize=address,undefined CMakeFiles/ky_test_render_demo.dir/tests/test_render_demo.c.o -o ky_test_render_demo  libky_engine.a libky_core.a -lm /usr/lib/x86_64-linux-gnu/libEGL.so /usr/lib/x86_64-linux-gnu/libGLESv2.so 

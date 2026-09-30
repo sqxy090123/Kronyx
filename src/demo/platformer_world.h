@@ -5,6 +5,7 @@
 #include "kronyx/physics.h"
 #include "kronyx/render.h"
 #include "kronyx/2d.h"
+#include "kronyx/audio.h"
 #include "kronyx/memory.h"
 #include "kronyx/file.h"
 
@@ -35,6 +36,9 @@ typedef struct PlatformerWorld {
     uint32_t tid_emitter;   /* particle2d "emitter" component, UINT32_MAX if absent */
 
     float emit_pulses;       /* remaining seconds of jump/land emission */
+
+    kyAudioClip *jump_sfx;   /* owned; NULL = audio unavailable */
+    kyAudioClip *land_sfx;
 
     kyTexture *role_tex;   /* owned; NULL = white sprite (asset missing / build fail) */
 

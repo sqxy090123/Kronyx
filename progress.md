@@ -89,7 +89,7 @@ G1 是整条产品线的主轴。G2 已在 G1 绿后落地最小集。
 | G8 | **碰撞回调导出** ✅ | G1 | 物理 contact → `ky_event_*`，供 demo/脚本 |
 | G9 | 关节 / constraints | 3D 或复杂 2D 需要时 | 现物理无 joint API |
 | G10 | **粒子** ✅ | G7 之后 | `particle2d.h/c`：emitter 组件 + particle-update 系统 + 16384 静态池 + xorshift32 确定性模拟 + `render_frame` 内置粒子 pass（console/GL 零改动）；`test_particle.c` 30 断言；demo role 跳跃/落地脉冲 |
-| G11 | 音频 | 至少 G1 可玩 | 现无 `audio.h`，从零开模块需单独规格 |
+| G11 | **音频** ✅ | 至少 G1 可玩 | `audio.h/c`：参数化 SFX 合成器（正弦扫频/方波/噪声/单击）+ 32 并发 voice + null-sink mix buffer（进程内 float，零系统库依赖）+ ECS `"sound"` 组件 + `audio-update` 系统；`test_audio.c` 61 断言；demo 跳跃/落地 SFX 脉冲 |
 | G12 | Vulkan 后端 | 真 GPU 环境 | 枚举已预留 `KY_RENDERER_VULKAN`；软渲染环境不做 |
 | G13 | 3D Renderer 组件 | Vulkan 或真 GL 3D 需求 | 2D 管线不冒充 3D |
 | G14 | APK 打包 | 移动目标明确时 | 现返回 not-supported |
@@ -115,7 +115,7 @@ G1 是整条产品线的主轴。G2 已在 G1 绿后落地最小集。
 | 命令列表无 cancel，begin 不 submit 泄漏 | `render.c` | 编辑器/demo 出现中途丢帧时 |
 | 2d GPU 资源按单 RenderDevice 缓存 | `src/render/2d.c` | 多设备或销毁后复用时 |
 | SAP 只扫 X 轴 | physics | 漏碰撞成为 demo 事实时 |
-| 无 joints / 粒子 / 音频 | — | G10 粒子已完成，见 P3；joints/音频见 P3 |
+| 无 joints / 音频设备后端 | — | G11 音频合成+混音已完成（null sink），设备输出与 joints 见 P3 |
 | 编辑器默认不进 CI | CMake | G5 开工时打开 |
 | `ky_test_render` EGL 偶发 segfault | 环境 | 不修业务；`ctest -j1`，失败重跑 |
 | `ky_demo` 无显示时 GLFW init 失败 | 环境 | 预期；逻辑测试走 ctest |
@@ -193,7 +193,18 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 
 普通构建 22/22 绿；ASan（`detect_leaks=0`）22/22 绿。
 
-**下一刀：P3 按顺序的下一个生成对象 G11 音频（从零开模块需单独规格）；或按实际需要继续代码体检/用户指派维护。**
+**已完成：G11 音频模块（合成 + 混音，null sink）。**
+交付：
+- `include/kronyx/audio.h` + `src/audio/audio.c`：`ky_audio_synthesize()` 参数化合成 4 种 SFX（`KY_SFX_SINE_SWEEP` / `SQUARE` / `NOISE` / `CLICK`），xorshift32 LCG 确定性、软限幅到 [-1,1]；voice 表 `KY_AUDIO_MAX_VOICES=32` 并发；null-sink mix buffer（进程内 `float[44100*2]`，零系统音频库依赖，与 console 渲染同策略）
+- ECS 集成：`kySoundEmitter` 组件 + `audio-update` 系统，`trigger` 帧置位自动播放；`ky_audio_register_components(w)` 幂等注册
+- **关键设计**：clip 被宿主提前 `ky_audio_clip_free` 时 voice 仍持有指针，`alive` 标志在已释放结构体里不可读（UAF）。改用**模块自有 dead-clip 集合**（`g_dead_clips[32]`）在模块内存中跟踪已释放指针，`ky_audio_mix` 查表而非解引用，ASan 干净
+- `src/demo/platformer_world.{h,c}`：跳跃 SINE_SWEEP(300→900Hz, 0.08s) + 落地 CLICK(0.04s) 脉冲；每 tick `ky_audio_mix(dt)`；teardown 释放 clip + `ky_audio_shutdown()`
+- `tests/test_audio.c`（61 断言）：合成合法/非法/确定性/限幅、播放参数校验、voice 满 32 截断、mix 帧数/回收/dt<=0、ECS trigger 自动播放、提前 free clip 安全跳过、shutdown 幂等
+- CMake：`audio.c` 入 `ky_engine`；`ky_test_audio` 挂 ctest（目标 22→23）
+
+普通构建 23/23 绿；ASan（`detect_leaks=0`）23/23 绿；`ky_demo` 无头冒烟 exit=0（ASan 下 demo 残留 LLVM/GL 间接泄漏 112 B 为既有 G15 债，非音频引入；音频测试自身 0 泄漏）。
+
+**下一刀：P3 按顺序的下一个生成对象 G12 Vulkan 后端（需真 GPU 环境，枚举已预留 `KY_RENDERER_VULKAN`）；或按实际需要继续代码体检/用户指派维护。**
 
 **已完成：安全漏洞扫描与修复——`src/script/vm.c` + `src/script/parser.c`**
 发现并修复 3 个严重 bug：

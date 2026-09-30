@@ -1,0 +1,1 @@
+/usr/bin/cc -g -fsanitize=address,undefined CMakeFiles/ky_test_demo_loop.dir/tests/test_demo_loop.c.o -o ky_test_demo_loop  libky_platformer.a libky_engine.a libky_core.a /usr/lib/x86_64-linux-gnu/libEGL.so /usr/lib/x86_64-linux-gnu/libGLESv2.so -lm 

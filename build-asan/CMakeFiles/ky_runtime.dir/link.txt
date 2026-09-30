@@ -1,0 +1,2 @@
+/usr/bin/ar qc libky_runtime.a CMakeFiles/ky_runtime.dir/src/engine/glfw.c.o CMakeFiles/ky_runtime.dir/src/engine/engine.c.o
+/usr/bin/ranlib libky_runtime.a

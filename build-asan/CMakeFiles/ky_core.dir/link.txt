@@ -1,0 +1,2 @@
+/usr/bin/ar qc libky_core.a CMakeFiles/ky_core.dir/src/core/math.c.o CMakeFiles/ky_core.dir/src/core/memory.c.o CMakeFiles/ky_core.dir/src/core/array.c.o CMakeFiles/ky_core.dir/src/core/hashmap.c.o CMakeFiles/ky_core.dir/src/core/string.c.o CMakeFiles/ky_core.dir/src/core/log.c.o CMakeFiles/ky_core.dir/src/core/time.c.o CMakeFiles/ky_core.dir/src/core/event.c.o CMakeFiles/ky_core.dir/src/core/input.c.o CMakeFiles/ky_core.dir/src/core/arena.c.o CMakeFiles/ky_core.dir/src/core/pool.c.o CMakeFiles/ky_core.dir/src/core/file.c.o
+/usr/bin/ranlib libky_core.a

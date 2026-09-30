@@ -1,5 +1,6 @@
 #include "platformer_world.h"
 #include "kronyx/particle2d.h"
+#include "kronyx/audio.h"
 #include "kronyx/log.h"
 #include <string.h>
 #include <math.h>
@@ -157,6 +158,15 @@ int platformer_setup(PlatformerWorld *out, kyRendererBackend rd_backend) {
     cam->pos         = (kyVec2){0, (float)(PLATFORMER_START_Y + PLATFORMER_CAM_OFFSET_Y)};
     cam->clear_color = (kyVec4){0.08f, 0.08f, 0.12f, 1.0f};
 
+    /* G11: synthesize jump/land SFX clips.  NULL-safe: if allocation fails
+     * the demo runs without audio, same fallback pattern as the texture. */
+    {
+        kySfxParams jp = ky_sfx_params_new(KY_SFX_SINE_SWEEP, 0.08f, 300.0f, 900.0f, 0.7f);
+        kySfxParams lp = ky_sfx_params_new(KY_SFX_CLICK, 0.04f, 0.0f, 0.0f, 0.5f);
+        out->jump_sfx = ky_audio_synthesize(&jp);
+        out->land_sfx = ky_audio_synthesize(&lp);
+    }
+
     return 0;
 }
 
@@ -200,6 +210,8 @@ int platformer_tick(PlatformerWorld *pw, float dt, float vx_target, int jump) {
             em->emit_rate = 60.0f;
             pw->emit_pulses = 0.3f;
         }
+        /* G11: play the jump SFX. */
+        if (pw->jump_sfx) ky_audio_play(pw->jump_sfx, 0.6f);
     }
 
     /* Integrate: horizontal constant velocity, vertical under gravity. */
@@ -220,6 +232,8 @@ int platformer_tick(PlatformerWorld *pw, float dt, float vx_target, int jump) {
                 em->emit_rate = 40.0f;
                 pw->emit_pulses = 0.2f;
             }
+            /* G11: play the land SFX. */
+            if (pw->land_sfx) ky_audio_play(pw->land_sfx, 0.4f);
         }
         pw->grounded = 1;
     }
@@ -249,6 +263,9 @@ int platformer_tick(PlatformerWorld *pw, float dt, float vx_target, int jump) {
     ky_world_sort_systems(pw->world);
     ky_world_step(pw->world, dt);
 
+    /* G11: advance the audio mixer on the same clock as the world. */
+    ky_audio_mix(dt);
+
     /* Render one frame. ky2d_render_world_auto submits the whole frame; an
      * extra ky_rd_present from here would double-issue on backends that do
      * not expect it. */
@@ -265,6 +282,9 @@ void platformer_teardown(PlatformerWorld *pw) {
     if (!pw) return;
     if (pw->world) { ky_world_destroy(pw->world); pw->world = NULL; }
     if (pw->role_tex) { ky_rd_destroy_texture(pw->rd, pw->role_tex); pw->role_tex = NULL; }
+    if (pw->jump_sfx) { ky_audio_clip_free(pw->jump_sfx); pw->jump_sfx = NULL; }
+    if (pw->land_sfx) { ky_audio_clip_free(pw->land_sfx); pw->land_sfx = NULL; }
+    ky_audio_shutdown();
     if (pw->phys)  { ky_physics_destroy(pw->phys); pw->phys = NULL; }
     if (pw->rd)    { ky_rd_destroy(pw->rd); pw->rd = NULL; }
 }

@@ -1,0 +1,1 @@
+/usr/bin/cc -g -fsanitize=address,undefined CMakeFiles/ky_mk_demo_asset.dir/tools/mk_demo_asset.c.o -o ky_mk_demo_asset 

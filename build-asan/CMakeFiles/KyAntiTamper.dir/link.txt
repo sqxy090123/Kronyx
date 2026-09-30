@@ -1,0 +1,1 @@
+/usr/bin/c++ -fPIC -g -fsanitize=address,undefined -shared -Wl,-soname,libKyAntiTamper.so -o libKyAntiTamper.so CMakeFiles/KyAntiTamper.dir/src/engine/anti_tamper_dll.cpp.o  -Wl,-rpath,"\$ORIGIN" /usr/lib/x86_64-linux-gnu/libcrypto.so 

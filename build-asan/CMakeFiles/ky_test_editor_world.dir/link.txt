@@ -1,0 +1,1 @@
+/usr/bin/cc -g -fsanitize=address,undefined CMakeFiles/ky_test_editor_world.dir/tests/test_editor_world.c.o -o ky_test_editor_world  libeditor_core.a libky_engine.a libky_core.a /usr/lib/x86_64-linux-gnu/libEGL.so /usr/lib/x86_64-linux-gnu/libGLESv2.so -lm 

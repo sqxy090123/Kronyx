@@ -1,0 +1,2 @@
+/usr/bin/ar qc libky_antitamper.a CMakeFiles/ky_antitamper.dir/src/engine/anti_tamper_game.c.o
+/usr/bin/ranlib libky_antitamper.a

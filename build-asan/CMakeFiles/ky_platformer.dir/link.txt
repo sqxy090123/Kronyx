@@ -1,0 +1,2 @@
+/usr/bin/ar qc libky_platformer.a CMakeFiles/ky_platformer.dir/src/demo/platformer_world.c.o
+/usr/bin/ranlib libky_platformer.a

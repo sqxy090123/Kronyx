@@ -55,6 +55,7 @@ add_library(ky_engine STATIC
   src/render/2d.c
   src/render/anim2d.c
   src/render/particle2d.c
+  src/audio/audio.c
   src/physics/physics.c
   src/physics/force_field.c
   src/script/script.c
@@ -183,6 +184,10 @@ if(KYR_BUILD_TESTS)
   add_executable(ky_test_particle tests/test_particle.c)
   target_link_libraries(ky_test_particle PRIVATE ky_engine ky_core)
   ky_add_test(particle ky_test_particle)
+
+  add_executable(ky_test_audio tests/test_audio.c)
+  target_link_libraries(ky_test_audio PRIVATE ky_engine ky_core)
+  ky_add_test(audio ky_test_audio)
 
 endif()
 

@@ -1,0 +1,1 @@
+/usr/bin/cc -g -fsanitize=address,undefined CMakeFiles/ky_test_input.dir/tests/test_input.c.o -o ky_test_input  libky_core.a -lm 

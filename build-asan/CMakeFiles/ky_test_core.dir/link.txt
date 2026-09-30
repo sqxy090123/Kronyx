@@ -1,0 +1,1 @@
+/usr/bin/cc -g -fsanitize=address,undefined CMakeFiles/ky_test_core.dir/tests/test_core.c.o -o ky_test_core  libky_core.a -lm 

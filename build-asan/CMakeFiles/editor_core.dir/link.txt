@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeditor_core.a CMakeFiles/editor_core.dir/tools/editor/src/editor_core.c.o
+/usr/bin/ranlib libeditor_core.a
