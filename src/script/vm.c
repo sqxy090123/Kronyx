@@ -710,9 +710,9 @@ static void compile_statement(kyCompileState *cs, kyAstNode *stmt) {
                 if (stmt->as.var_decl.init) {
                     compile_expression(cs, stmt->as.var_decl.init, tmp);
                 } else {
-                    compile_emit(cs, 0, tmp, 0, 0);
+                    compile_emit(cs, OP_LOADNIL, tmp, 0, 0);
                 }
-                compile_emit(cs, 33, tmp, name_idx, 0);
+                compile_emit(cs, OP_SETGLOBAL, tmp, name_idx, 0);
                 break;
             }
             int local = compile_alloc_local(cs, stmt->as.var_decl.name);
@@ -720,7 +720,7 @@ static void compile_statement(kyCompileState *cs, kyAstNode *stmt) {
             if (stmt->as.var_decl.init) {
                 compile_expression(cs, stmt->as.var_decl.init, local);
             } else {
-                compile_emit(cs, 0, local, 0, 0);
+                compile_emit(cs, OP_LOADNIL, local, 0, 0);
             }
             break;
         }
@@ -728,9 +728,9 @@ static void compile_statement(kyCompileState *cs, kyAstNode *stmt) {
             if (stmt->as.return_stmt.expr) {
                 int reg = 0;
                 compile_expression(cs, stmt->as.return_stmt.expr, reg);
-                compile_emit(cs, 43, reg, 0, 0);
+                compile_emit(cs, OP_RETURN, reg, 0, 0);
             } else {
-                compile_emit(cs, 43, 0, 0, 0);
+                compile_emit(cs, OP_RETURN, 0, 0, 0);
             }
             break;
         }
@@ -738,11 +738,11 @@ static void compile_statement(kyCompileState *cs, kyAstNode *stmt) {
             int temp_reg = cs->local_count + 1;
             compile_expression(cs, stmt->as.if_stmt.cond, temp_reg);
             int jmp_idx = cs->code_count;
-            compile_emit(cs, 52, temp_reg, 0, 0); /* JMPIFNOT -> else / end */
+            compile_emit(cs, OP_JMPIFNOT, temp_reg, 0, 0);
             compile_block(cs, stmt->as.if_stmt.then_b);
             if (stmt->as.if_stmt.else_b) {
                 int jump_idx = cs->code_count;
-                compile_emit(cs, 50, 0, 0, 0); /* JUMP over else (placeholder) */
+                compile_emit(cs, OP_JUMP, 0, 0, 0); /* JUMP over else (placeholder) */
                 int else_start = cs->code_count;
                 /* False condition continues at else_start. */
                 cs->code[jmp_idx + 2] = else_start - jmp_idx;
@@ -759,10 +759,10 @@ static void compile_statement(kyCompileState *cs, kyAstNode *stmt) {
             int temp_reg = cs->local_count + 1;
             compile_expression(cs, stmt->as.while_stmt.cond, temp_reg);
             int jmp_idx = cs->code_count;
-            compile_emit(cs, 52, temp_reg, 0, 0);
+            compile_emit(cs, OP_JMPIFNOT, temp_reg, 0, 0);
             compile_block(cs, stmt->as.while_stmt.body);
             int jmp_offset = loop_start - cs->code_count;
-            compile_emit(cs, 50, 0, jmp_offset, 0);
+            compile_emit(cs, OP_JUMP, 0, jmp_offset, 0);
             cs->code[jmp_idx + 2] = cs->code_count - jmp_idx;
             break;
         }
@@ -773,13 +773,13 @@ static void compile_statement(kyCompileState *cs, kyAstNode *stmt) {
                 int temp_reg = cs->local_count + 1;
                 compile_expression(cs, stmt->as.for_stmt.cond, temp_reg);
                 int jmp_idx = cs->code_count;
-                compile_emit(cs, 52, temp_reg, 0, 0);
+                compile_emit(cs, OP_JMPIFNOT, temp_reg, 0, 0);
                 compile_block(cs, stmt->as.for_stmt.body);
                 if (stmt->as.for_stmt.inc) {
                     compile_expression(cs, stmt->as.for_stmt.inc, 0);
                 }
                 int jmp_offset = loop_start - cs->code_count;
-                compile_emit(cs, 50, 0, jmp_offset, 0);
+                compile_emit(cs, OP_JUMP, 0, jmp_offset, 0);
                 cs->code[jmp_idx + 2] = cs->code_count - jmp_idx;
             }
             break;
@@ -808,30 +808,30 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
                 int64_t ival = t->as.ival;
                 /* Always use const pool for int literals to prevent int32 truncation */
                 int c = compile_add_const(cs, (double)ival);
-                compile_emit(cs, 4, dest, c, 0);
+                compile_emit(cs, OP_LOADCONST, dest, c, 0);
             } else if (t->kind == KYX_TK_FLOAT_LIT) {
                 int c = compile_add_const(cs, t->as.fval);
-                compile_emit(cs, 4, dest, c, 0);
+                compile_emit(cs, OP_LOADCONST, dest, c, 0);
             } else if (t->kind == KYX_TK_STRING_LIT) {
                 int len = t->len >= 2 ? (int)t->len - 2 : 0;
                 int c = compile_add_string_n(cs, t->as.sval, len);
-                compile_emit(cs, 28, dest, c, 0);
+                compile_emit(cs, OP_LOADSTRING, dest, c, 0);
             } else if (t->kind == KYX_TK_TRUE) {
-                compile_emit(cs, 1, dest, 1, 0);
+                compile_emit(cs, OP_LOADBOOL, dest, 1, 0);
             } else if (t->kind == KYX_TK_FALSE) {
-                compile_emit(cs, 1, dest, 0, 0);
+                compile_emit(cs, OP_LOADBOOL, dest, 0, 0);
             } else if (t->kind == KYX_TK_NIL_LIT) {
-                compile_emit(cs, 0, dest, 0, 0);
+                compile_emit(cs, OP_LOADNIL, dest, 0, 0);
             }
             break;
         }
         case KY_AST_EXPR_IDENT: {
             int local = compile_find_local(cs, node->as.ident.name);
             if (local >= 0) {
-                compile_emit(cs, 5, dest, local, 0);
+                compile_emit(cs, OP_MOVE, dest, local, 0);
             } else {
                 int idx = compile_add_string(cs, node->as.ident.name);
-                compile_emit(cs, 32, dest, idx, 0);
+                compile_emit(cs, OP_GETGLOBAL, dest, idx, 0);
             }
             break;
         }
@@ -847,12 +847,12 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
                         if (tok == KYX_TK_ASSIGN) {
                             int tmp = cs->local_count + 1;
                             compile_expression(cs, node->as.binop.right, tmp);
-                            compile_emit(cs, 5, local, tmp, 0);  /* OP_MOVE: local = tmp */
+                            compile_emit(cs, OP_MOVE, local, tmp, 0);
                         } else {
                             int rhs_reg = cs->local_count + 1;
                             compile_expression(cs, node->as.binop.right, rhs_reg);
-                            int oc = tok == KYX_TK_PLUSEQ ? 6 : tok == KYX_TK_MINUSEQ ? 7 :
-                                     tok == KYX_TK_STAREQ ? 8 : tok == KYX_TK_DIVEQ ? 9 : 10;
+                            int oc = tok == KYX_TK_PLUSEQ ? OP_ADD : tok == KYX_TK_MINUSEQ ? OP_SUB :
+                                     tok == KYX_TK_STAREQ ? OP_MUL : tok == KYX_TK_DIVEQ ? OP_DIV : OP_MOD;
                             compile_emit(cs, oc, local, local, rhs_reg);
                         }
                         break;
@@ -862,13 +862,13 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
                     if (tok == KYX_TK_ASSIGN) {
                         compile_expression(cs, node->as.binop.right, tmp);
                     } else {
-                        compile_emit(cs, 32, tmp, name_idx, 0);
+                        compile_emit(cs, OP_GETGLOBAL, tmp, name_idx, 0);
                         compile_expression(cs, node->as.binop.right, tmp + 1);
-                        int oc = tok == KYX_TK_PLUSEQ ? 6 : tok == KYX_TK_MINUSEQ ? 7 :
-                                 tok == KYX_TK_STAREQ ? 8 : tok == KYX_TK_DIVEQ ? 9 : 10;
+                        int oc = tok == KYX_TK_PLUSEQ ? OP_ADD : tok == KYX_TK_MINUSEQ ? OP_SUB :
+                                 tok == KYX_TK_STAREQ ? OP_MUL : tok == KYX_TK_DIVEQ ? OP_DIV : OP_MOD;
                         compile_emit(cs, oc, tmp, tmp, tmp + 1);
                     }
-                    compile_emit(cs, 33, tmp, name_idx, 0);
+                    compile_emit(cs, OP_SETGLOBAL, tmp, name_idx, 0);
                     break;
                 }
             }
@@ -878,24 +878,24 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
             compile_expression(cs, node->as.binop.right, rhs);
             int opcode = -1;
             switch (tok) {
-                case KYX_TK_PLUS:      opcode = 6;  break;
-                case KYX_TK_MINUS:     opcode = 7;  break;
-                case KYX_TK_STAR:      opcode = 8;  break;
-                case KYX_TK_SLASH:     opcode = 9;  break;
-                case KYX_TK_MOD:       opcode = 10; break;
-                case KYX_TK_EQ:        opcode = 14; break;
-                case KYX_TK_NEQ:       opcode = 15; break;
-                case KYX_TK_LT:        opcode = 16; break;
-                case KYX_TK_LE:        opcode = 17; break;
-                case KYX_TK_GT:        opcode = 18; break;
-                case KYX_TK_GE:        opcode = 19; break;
-                case KYX_TK_AND:       opcode = 20; break;
-                case KYX_TK_OR:        opcode = 21; break;
-                case KYX_TK_BAND:      opcode = 22; break;
-                case KYX_TK_BOR:       opcode = 23; break;
-                case KYX_TK_BXOR:      opcode = 24; break;
-                case KYX_TK_SHL:       opcode = 25; break;
-                case KYX_TK_SHR:       opcode = 26; break;
+                case KYX_TK_PLUS:      opcode = OP_ADD;  break;
+                case KYX_TK_MINUS:     opcode = OP_SUB;  break;
+                case KYX_TK_STAR:      opcode = OP_MUL;  break;
+                case KYX_TK_SLASH:     opcode = OP_DIV;  break;
+                case KYX_TK_MOD:       opcode = OP_MOD;  break;
+                case KYX_TK_EQ:        opcode = OP_EQ;   break;
+                case KYX_TK_NEQ:       opcode = OP_NEQ;  break;
+                case KYX_TK_LT:        opcode = OP_LT;   break;
+                case KYX_TK_LE:        opcode = OP_LE;   break;
+                case KYX_TK_GT:        opcode = OP_GT;   break;
+                case KYX_TK_GE:        opcode = OP_GE;   break;
+                case KYX_TK_AND:       opcode = OP_AND;  break;
+                case KYX_TK_OR:        opcode = OP_OR;   break;
+                case KYX_TK_BAND:      opcode = OP_BAND; break;
+                case KYX_TK_BOR:       opcode = OP_BOR;  break;
+                case KYX_TK_BXOR:      opcode = OP_BXOR; break;
+                case KYX_TK_SHL:       opcode = OP_BSHL; break;
+                case KYX_TK_SHR:       opcode = OP_BSHR; break;
             }
             if (opcode >= 0) compile_emit(cs, opcode, dest, lhs, rhs);
             break;
@@ -904,15 +904,15 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
             if (strcmp(node->as.unop.op, "-") == 0) {
                 int val = dest;
                 compile_expression(cs, node->as.unop.operand, val);
-                compile_emit(cs, 11, dest, val, 0);
+                compile_emit(cs, OP_NEG, dest, val, 0);
             } else if (strcmp(node->as.unop.op, "!") == 0) {
                 int val = dest;
                 compile_expression(cs, node->as.unop.operand, val);
-                compile_emit(cs, 12, dest, val, 0);
+                compile_emit(cs, OP_NOT, dest, val, 0);
             } else if (strcmp(node->as.unop.op, "~") == 0) {
                 int val = dest;
                 compile_expression(cs, node->as.unop.operand, val);
-                compile_emit(cs, 13, dest, val, 0);
+                compile_emit(cs, OP_BNOT, dest, val, 0);
             }
             break;
         }
@@ -927,10 +927,10 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
                 callee->as.field.obj->kind == KY_AST_EXPR_IDENT) {
                 int name_idx = compile_add_string(cs, callee->as.field.field);
                 int ns_idx = compile_add_string(cs, callee->as.field.obj->as.ident.name);
-                compile_emit(cs, 61, tmp_reg, nargs | (name_idx << 8), ns_idx);
+                compile_emit(cs, OP_NATIVECALL, tmp_reg, nargs | (name_idx << 8), ns_idx);
             } else {
                 compile_expression(cs, callee, tmp_reg);
-                compile_emit(cs, 41, tmp_reg, nargs + 1, 0);
+                compile_emit(cs, OP_CALL, tmp_reg, nargs + 1, 0);
             }
             break;
         }
@@ -939,7 +939,7 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
             int obj_reg = dest;
             compile_expression(cs, node->as.field.obj, obj_reg);
             int field_idx = compile_add_string(cs, node->as.field.field);
-            compile_emit(cs, 30, dest, obj_reg, field_idx);
+            compile_emit(cs, OP_GETFIELD, dest, obj_reg, field_idx);
             break;
         }
         default:
@@ -974,7 +974,7 @@ kyProto *kyx_compile(kyVM *vm, kyAstNode *root, char *err_buf, int err_buf_size)
             if (stmt->kind == KY_AST_FUNC_DECL) continue;
             compile_statement(&cs, stmt);
         }
-        compile_emit(&cs, 62, 0, 0, 0);  /* OP_EXIT */
+        compile_emit(&cs, OP_EXIT, 0, 0, 0);
         int id = vm->proto_count++;
         if (id < KYX_MAX_PROTOS && cs.code) {
             size_t code_size = cs.code_count * sizeof(int);
