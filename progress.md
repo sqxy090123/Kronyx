@@ -239,8 +239,6 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 普通 + ASan 全量 `ctest -j1` 23/23 绿；`ky_demo` 无头冒烟 exit=0。
 
 **体检中识别但保留现状的项**（需测试验证或涉及公开 API，非本轮无损范围）：
-- `physics.c::cast_ray` collider 反查索引（需改公开 `kyPhysicsWorld` struct，const 路径）
-- `physics.c` broad 自定义 `broad_fn` 的每帧 `calloc`（预分配 +32KB 常驻堆，与省体积冲突；多数场景走内置 SAP 分支不分配）
 - `physics.c::sap_find_pairs` O(n²) active 扫描（SAP 核心路径，n≤1024，改 active list 需大量碰撞测试）
 - `bindings.c::tid_transform` 每 native 调用 O(n) 扫组件类型（可缓存，涉及世界生命周期失效边界）
 - `vm.c` 7 个死 opcode + 30+ 魔术数字替换为枚举常量（体积大改，需全脚本测试覆盖）
@@ -257,7 +255,18 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 
 普通 + ASan 全量 `ctest -j1` 23/23 绿；`ky_demo` 无头冒烟 exit=0。
 
-**下一刀：`src/physics`（SAP active-list、cast_ray 反查索引）+ `src/script`（vm.c 魔术数字、gc 标记循环提取）；或 G12 Vulkan 后端（需真 GPU）/用户指派维护。**
+**已完成：`src/physics` + `src/script`（gc 标记循环提取）代码体检（2026-10-01）。**
+交付（行为等价，仅优化；普通 + ASan 全量 `ctest -j1` 23/23 绿，`ky_demo` 无头冒烟 exit=0）：
+- `src/physics/physics_internal.h`：`kyPhysicsWorld` 加 `collider_index[KY_PHYSICS_MAX_COLLIDERS+1]` 反查表（1-based 存储索引，0 = 无）；`add_collider` 时填充；`phys_body_update_aabb`（每帧每 body）+ `cast_ray`（每 body 内层）的 O(collider_count) 扫描改为 O(1) 查表
+- `src/physics/physics.c`：`broad_fn` 自定义 broadphase 路径原每帧 `calloc/free` 32KB scratch（exts + ids）——改为 `ky_physics_create` 时预分配、`destroy` 时释放，消除每帧堆抖动
+- `src/script/gc.c`：提取 `gc_clear_marks(slab, used)` 辅助函数，替换 `run_nursery`/`run_full` 中 4 处重复的标记清除扫描循环（-51 净减行）
+
+体检后保留现状的项（非本轮无损范围）：
+- `physics.c::sap_find_pairs` O(n²) active 扫描：SAP 核心路径，n≤1024，改 active-list 需大量碰撞测试覆盖
+- `bindings.c::tid_transform` 每 native 调用 O(n) 扫组件类型：可缓存，但涉及世界生命周期失效边界
+- `vm.c` 7 个死 opcode + 30+ 魔术数字替换为枚举常量：体积大改，需全脚本测试覆盖
+
+**下一刀：`src/script/vm.c` 魔术数字枚举化 + 死 opcode 清理（需全脚本测试矩阵守护）；或 G12 Vulkan 后端（需真 GPU）/ 用户指派维护。**
 
 **已完成：安全漏洞扫描与修复——`src/script/vm.c` + `src/script/parser.c`**
 发现并修复 3 个严重 bug：
