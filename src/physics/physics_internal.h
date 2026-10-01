@@ -71,6 +71,11 @@ struct kyPhysicsWorld {
      * When NULL the built-in implementations are used. */
     kyPhysicsBroadFn  broad_fn;
     kyPhysicsNarrowFn narrow_fn;
+
+    /* Pre-allocated scratch buffers for custom broadphase (avoid per-frame
+     * calloc/free when broad_fn is set). */
+    kyExtents *broad_exts;
+    uint32_t  *broad_ids;
 };
 
 static inline int sap_event_cmp(const void *a, const void *b) {
