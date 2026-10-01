@@ -255,18 +255,19 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 
 普通 + ASan 全量 `ctest -j1` 23/23 绿；`ky_demo` 无头冒烟 exit=0。
 
-**已完成：`src/physics` + `src/script`（gc 标记循环提取）代码体检（2026-10-01）。**
+**已完成：`src/physics` + `src/script`（gc 标记循环提取 + vm 魔术数字）代码体检（2026-10-01）。**
 交付（行为等价，仅优化；普通 + ASan 全量 `ctest -j1` 23/23 绿，`ky_demo` 无头冒烟 exit=0）：
 - `src/physics/physics_internal.h`：`kyPhysicsWorld` 加 `collider_index[KY_PHYSICS_MAX_COLLIDERS+1]` 反查表（1-based 存储索引，0 = 无）；`add_collider` 时填充；`phys_body_update_aabb`（每帧每 body）+ `cast_ray`（每 body 内层）的 O(collider_count) 扫描改为 O(1) 查表
 - `src/physics/physics.c`：`broad_fn` 自定义 broadphase 路径原每帧 `calloc/free` 32KB scratch（exts + ids）——改为 `ky_physics_create` 时预分配、`destroy` 时释放，消除每帧堆抖动
 - `src/script/gc.c`：提取 `gc_clear_marks(slab, used)` 辅助函数，替换 `run_nursery`/`run_full` 中 4 处重复的标记清除扫描循环（-51 净减行）
+- `src/script/vm.c`：编译器段 `compile_emit` 全部魔术数字 opcode 首参（`0/1/4/5/6..26/30/32/33/41/43/50/52/61/62`）替换为 `OP_*` 枚举常量，字节码数值逐位不变（23/23 全绿守护）；涉及 var_decl/return/if/while/for/literal/ident/binop 赋值+运算符表/unop/call/field 全部发射点
 
 体检后保留现状的项（非本轮无损范围）：
 - `physics.c::sap_find_pairs` O(n²) active 扫描：SAP 核心路径，n≤1024，改 active-list 需大量碰撞测试覆盖
 - `bindings.c::tid_transform` 每 native 调用 O(n) 扫组件类型：可缓存，但涉及世界生命周期失效边界
-- `vm.c` 7 个死 opcode + 30+ 魔术数字替换为枚举常量：体积大改，需全脚本测试覆盖
+- `vm.c` 死 opcode 清理（`OP_LOADINT/OP_LOADFLOAT/OP_CLOSURE/OP_INVOKE/OP_NEWARRAY/OP_SETFIELD/OP_SETINDEX` 编译器从不发射、运行时也无 case 分支）：删枚举项 + 运行时 case 属行为大改，且需确认无外部手写字节码依赖，单独开坑
 
-**下一刀：`src/script/vm.c` 魔术数字枚举化 + 死 opcode 清理（需全脚本测试矩阵守护）；或 G12 Vulkan 后端（需真 GPU）/ 用户指派维护。**
+**下一刀：`vm.c` 死 opcode 清理（枚举项 + 运行时 case 双删，需全脚本测试矩阵 + 手写字节码依赖核查）；或 G12 Vulkan 后端（需真 GPU）/ 用户指派维护。**
 
 **已完成：安全漏洞扫描与修复——`src/script/vm.c` + `src/script/parser.c`**
 发现并修复 3 个严重 bug：
