@@ -204,6 +204,17 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 
 普通构建 23/23 绿；ASan（`detect_leaks=0`）23/23 绿；`ky_demo` 无头冒烟 exit=0（ASan 下 demo 残留 LLVM/GL 间接泄漏 112 B 为既有 G15 债，非音频引入；音频测试自身 0 泄漏）。
 
+**已完成：代码体检——`src/render/render.c`（`ky_rd_submit` 去重，-3 行，行为等价）。**
+交付：
+- `ky_rd_submit` 原对 `draw_pass_hook` 分支与无 hook 分支各调一次 `rd->vt->submit`；合并为单条 `if (hook) hook(...); submit(...)`，`return` 冗余消除（原本就在函数尾）
+- `tests/test_hooks.c::test_render_hook` 已守护 hook 契约（submit 时 hook 必被调用），去重后全量回归无损
+
+体检中识别但未改的 2d.c 隐患（保留现状，行为正确）：
+- `cache_init` 切设备路径里 `cache_destroy_with_rd`（已 `memset 0`）后又调 `cache_destroy()`（再 `memset 0`）——**重复清零**
+- 若删除 `cache_destroy()`，"同设备部分失败重试"场景会泄漏半成品 shader（`cache_destroy` 承担了丢弃未完成资源的路径），故现状为正确行为，非可无损删除的死代码
+
+普通 + ASan 全量 `ctest -j1` 23/23 绿；`ky_demo` 无头冒烟 exit=0。
+
 **下一刀：P3 按顺序的下一个生成对象 G12 Vulkan 后端（需真 GPU 环境，枚举已预留 `KY_RENDERER_VULKAN`）；或按实际需要继续代码体检/用户指派维护。**
 
 **已完成：安全漏洞扫描与修复——`src/script/vm.c` + `src/script/parser.c`**
