@@ -13,28 +13,23 @@ typedef struct kyEventListener {
 
 static kyEventListener g_registry[KY_EVENT_MAX_LISTENERS];
 
-static int find_name_count(const char *name) {
-    int count = 0;
-    for (int i = 0; i < KY_EVENT_MAX_LISTENERS; i++)
-        if (g_registry[i].fn && g_registry[i].name[0] &&
-            strcmp(g_registry[i].name, name) == 0)
-            count++;
-    return count;
-}
-
 int ky_event_register(const char *name, kyEventFn fn, void *user) {
     if (!name || !fn) return -1;
     if (strlen(name) >= sizeof(((kyEventListener *)0)->name)) return -4; /* name too long */
-    /* Reject duplicate registration of the same (name, fn, user) triple */
+    /* Single pass: reject the exact (name, fn, user) triple, count the
+     * number of prior listeners sharing `name` for the returned index. */
+    int prior = 0;
+    int dup = 0;
     for (int i = 0; i < KY_EVENT_MAX_LISTENERS; i++) {
-        if (g_registry[i].fn && g_registry[i].name[0] &&
-            strcmp(g_registry[i].name, name) == 0 &&
-            g_registry[i].fn == fn && g_registry[i].user == user)
-            return -3; /* already registered */
+        if (!g_registry[i].fn || !g_registry[i].name[0]) continue;
+        if (strcmp(g_registry[i].name, name) == 0) {
+            prior++;
+            if (g_registry[i].fn == fn && g_registry[i].user == user) dup = 1;
+        }
     }
+    if (dup) return -3; /* already registered */
     for (int i = 0; i < KY_EVENT_MAX_LISTENERS; i++) {
         if (!g_registry[i].fn) {
-            int prior = find_name_count(name);
             snprintf(g_registry[i].name, sizeof(g_registry[i].name), "%s", name);
             g_registry[i].fn = fn;
             g_registry[i].user = user;

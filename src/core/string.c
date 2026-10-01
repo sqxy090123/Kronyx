@@ -17,7 +17,10 @@ void ky_string_deinit(kyString *s) {
 void ky_string_reserve(kyString *s, size_t cap) {
     if (cap <= s->cap) return;
     size_t nc = s->cap ? s->cap : 16;
-    while (nc < cap) nc *= 2;
+    while (nc < cap) {
+        if (nc > SIZE_MAX / 2) { nc = SIZE_MAX; break; }
+        nc *= 2;
+    }
     s->data = (char *)ky_mem_realloc(s->alloc, s->data, nc);
     s->cap = nc;
 }
