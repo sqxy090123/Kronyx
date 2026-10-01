@@ -215,7 +215,18 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 
 普通 + ASan 全量 `ctest -j1` 23/23 绿；`ky_demo` 无头冒烟 exit=0。
 
-**下一刀：P3 按顺序的下一个生成对象 G12 Vulkan 后端（需真 GPU 环境，枚举已预留 `KY_RENDERER_VULKAN`）；或按实际需要继续代码体检/用户指派维护。**
+**已完成：代码体检（第一轮）——`src/core` 全 12 文件扫描，改动 2 处。**
+交付：
+- `src/core/string.c`：`ky_string_reserve` 的 `while (nc < cap) nc *= 2;` 无 SIZE_MAX 保护，巨大 `cap` 可整数溢出/死循环——对齐 `array.c` 既有写法加 `if (nc > SIZE_MAX/2) { nc = SIZE_MAX; break; }` 溢出闸
+- `src/core/event.c`：`ky_event_register` 原扫 32 槽 registry 两遍（dup-check 一遍 + `find_name_count` 一遍）——合并为单趟（同时算 `prior` 计数与 `dup` 判定），删死函数 `find_name_count`
+- 体检中识别但保留现状的隐患（行为正确，非本轮无损范围）：
+  - `math.c::ky_ray_aabb` 形参 `o`/`d` 经 `&o.x`/`&d.x` 取址使用，并非死参（已复核，不改）
+  - `event.c::ky_event_trigger` 每次对 32 槽全 `strcmp` 匹配；因 `g_registry` 全局 + `name_count` 同名多监听器语义，O(1) 定位需按 name 索引化（行为大改，留待后续）
+  - `pool.c::pool_grow` 用 `old_head` 局部别名而非 `p->head`（纯可读性，行为等价，不动）
+
+普通 + ASan 全量 `ctest -j1` 23/23 绿；`ky_test_core`(95 断言)/`core_quality`(437)/`event`(12) 定向全绿；`ky_demo` 无头冒烟 exit=0。
+
+**下一刀：代码体检第二轮（`src/ecs` + `src/scene` + `src/physics`）；或 G12 Vulkan 后端（需真 GPU）/用户指派维护。**
 
 **已完成：安全漏洞扫描与修复——`src/script/vm.c` + `src/script/parser.c`**
 发现并修复 3 个严重 bug：
