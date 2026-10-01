@@ -54,6 +54,12 @@ struct kyPhysicsWorld {
     int             pair_count;
     uint32_t        next_body_id;
     uint32_t        next_collider_id;
+
+    /* Reverse index: collider_id (1-based) -> storage index+1 in
+     * colliders[], or 0 when no live collider carries that id. Rebuilt
+     * by add_collider. O(1) lookup replaces the per-call O(n) scan in
+     * phys_body_update_aabb / cast_ray. */
+    int             collider_index[KY_PHYSICS_MAX_COLLIDERS + 1];
     
     /* Force fields */
     kyPhysForceField force_fields[KY_PHYSICS_MAX_FORCE_FIELDS];
@@ -82,12 +88,8 @@ static inline void phys_body_update_aabb(kyPhysBody *b, const kyPhysicsWorld *pw
     const kyRigidBody *r = &b->body;
     const kyCollider *c = NULL;
     uint32_t cid = r->collider_id;
-    for (int i = 0; i < pw->collider_count; i++) {
-        if (pw->colliders[i].alive && (uint32_t)i + 1 == cid) {
-            c = &pw->colliders[i].collider;
-            break;
-        }
-    }
+    int entry = (cid <= (uint32_t)KY_PHYSICS_MAX_COLLIDERS) ? pw->collider_index[cid] : 0;
+    if (entry && pw->colliders[entry - 1].alive) c = &pw->colliders[entry - 1].collider;
     if (!c) {
         b->has_aabb = 0;
         b->aabb_min = (kyVec3){0, 0, 0};

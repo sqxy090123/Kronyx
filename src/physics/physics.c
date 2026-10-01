@@ -23,6 +23,7 @@ kyPhysicsWorld *ky_physics_create(kyVec3 gravity) {
     memset(pw->pairs, 0, sizeof(pw->pairs));
     memset(pw->force_fields, 0, sizeof(pw->force_fields));
     memset(pw->sap_active, 0, sizeof(pw->sap_active));
+    memset(pw->collider_index, 0, sizeof(pw->collider_index));
     pw->broad_fn = NULL;
     pw->narrow_fn = NULL;
     return pw;
@@ -35,9 +36,12 @@ void ky_physics_destroy(kyPhysicsWorld *pw) {
 uint32_t ky_physics_add_collider(kyPhysicsWorld *pw, const kyCollider *c) {
     if (!pw || !c || pw->collider_count >= KY_PHYSICS_MAX_COLLIDERS) return 0;
     uint32_t id = pw->next_collider_id++;
-    kyPhysCollider *col = &pw->colliders[pw->collider_count++];
+    int storage = pw->collider_count++;
+    kyPhysCollider *col = &pw->colliders[storage];
     col->alive = 1;
     col->collider = *c;
+    /* Store 1-based storage index so that 0 means "no collider". */
+    pw->collider_index[id] = storage + 1;
     return id;
 }
 
@@ -346,12 +350,8 @@ void ky_physics_cast_ray(const kyPhysicsWorld *pw, kyVec3 origin, kyVec3 dir,
 
         uint32_t cid = b->body.collider_id;
         const kyCollider *col = NULL;
-        for (int j = 0; j < pw->collider_count; j++) {
-            if (pw->colliders[j].alive && (uint32_t)j + 1 == cid) {
-                col = &pw->colliders[j].collider;
-                break;
-            }
-        }
+        int centry = (cid <= (uint32_t)KY_PHYSICS_MAX_COLLIDERS) ? pw->collider_index[cid] : 0;
+        if (centry && pw->colliders[centry - 1].alive) col = &pw->colliders[centry - 1].collider;
         const kySphere *sph = (col && col->shape == KY_SHAPE_SPHERE) ? &col->u.sphere : NULL;
         if (sph) {
             kyVec3 oc = ky_vec3_sub(origin, sph->center);
