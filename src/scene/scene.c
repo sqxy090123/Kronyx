@@ -61,6 +61,26 @@ const char *ky_scene_get_meta(const kyScene *s, const char *key) {
     return (const char *)ky_hashmap_get(&s->meta, key);
 }
 
+/* Shared by save/load: scan the world's registered component types once
+ * and return the ids of the three builtin types used by the scene format.
+ * Read-only over the world. */
+static void scene_lookup_type_ids(const kyWorld *w, uint32_t *t_tr,
+                                  uint32_t *t_sp, uint32_t *t_ca) {
+    *t_tr = *t_sp = *t_ca = (uint32_t)-1;
+    for (uint32_t i = 0; ; ++i) {
+        const kyComponentType *ct = ky_world_component_type(w, i);
+        if (!ct) break;
+        if (ct->name) {
+            if (strcmp(ct->name, "transform") == 0 || strcmp(ct->name, "Transform") == 0)
+                *t_tr = i;
+            else if (strcmp(ct->name, "sprite") == 0 || strcmp(ct->name, "Sprite") == 0)
+                *t_sp = i;
+            else if (strcmp(ct->name, "camera2d") == 0 || strcmp(ct->name, "Camera2D") == 0)
+                *t_ca = i;
+        }
+    }
+}
+
 /* ── Save ──────────────────────────────────────────────────────────── */
 
 int ky_scene_save(const kyScene *s, const char *path) {
@@ -81,20 +101,8 @@ int ky_scene_save(const kyScene *s, const char *path) {
         }
     }
 
-    uint32_t tid_transform = (uint32_t)-1, tid_sprite = (uint32_t)-1,
-             tid_camera    = (uint32_t)-1;
-    for (uint32_t i = 0; ; ++i) {
-        const kyComponentType *ct = ky_world_component_type(s->world, i);
-        if (!ct) break;
-        if (ct->name) {
-            if (strcmp(ct->name, "transform") == 0 || strcmp(ct->name, "Transform") == 0)
-                tid_transform = i;
-            else if (strcmp(ct->name, "sprite") == 0 || strcmp(ct->name, "Sprite") == 0)
-                tid_sprite = i;
-            else if (strcmp(ct->name, "camera2d") == 0 || strcmp(ct->name, "Camera2D") == 0)
-                tid_camera = i;
-        }
-    }
+    uint32_t tid_transform, tid_sprite, tid_camera;
+    scene_lookup_type_ids(s->world, &tid_transform, &tid_sprite, &tid_camera);
 
     /* Single pass over slots keeps id order while avoiding the O(n^2) cost of
      * calling ky_world_get_alive_entity once per alive entity. */
@@ -205,34 +213,15 @@ int ky_scene_load(kyScene *s, const char *path) {
     text[raw_len] = '\0';
     raw = text;
 
-    kyAllocator saved = s->alloc;
-    (void)saved; /* allocator is a value type, no need to save/restore */
     int r = ky_scene_reinit_world(s);
     if (r != 0) { free(raw); return (r < 0) ? r : -3; }
 
-    uint32_t tid_transform = (uint32_t)-1, tid_sprite = (uint32_t)-1,
-             tid_camera    = (uint32_t)-1;
-    for (uint32_t i = 0; ; ++i) {
-        const kyComponentType *ct = ky_world_component_type(s->world, i);
-        if (!ct) break;
-        if (ct->name) {
-            if (strcmp(ct->name, "transform") == 0 || strcmp(ct->name, "Transform") == 0)
-                tid_transform = i;
-            else if (strcmp(ct->name, "sprite") == 0 || strcmp(ct->name, "Sprite") == 0)
-                tid_sprite = i;
-            else if (strcmp(ct->name, "camera2d") == 0 || strcmp(ct->name, "Camera2D") == 0)
-                tid_camera = i;
-        }
-    }
+    uint32_t tid_transform, tid_sprite, tid_camera;
+    scene_lookup_type_ids(s->world, &tid_transform, &tid_sprite, &tid_camera);
 
     /* Parse: collect component attribute maps per entity, then build world. */
     enum { ST_OUTSIDE, ST_ENTITY } state = ST_OUTSIDE;
     uint32_t cur_tid = (uint32_t)-1;
-    (void)cur_tid;
-    kyEntity cur_ent = {0, 0};
-    (void)cur_ent;
-    int has_transform = 0;
-    (void)has_transform;
 
     #define MAX_ENTITIES 64
     #define MAX_ATTRS 32

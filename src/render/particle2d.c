@@ -95,7 +95,8 @@ static int component_registered(const kyWorld *w, const char *name) {
     return 0;
 }
 
-static void emit_one(kyWorld *w, kyEntity e, kyEmitter *em, uint32_t owner_id) {
+static void emit_one(kyWorld *w, kyEntity e, kyEmitter *em, uint32_t owner_id,
+                     uint32_t tid_tr) {
     int slot = pool_alloc();
     if (slot < 0) return; /* pool full: silent truncate */
 
@@ -129,7 +130,6 @@ static void emit_one(kyWorld *w, kyEntity e, kyEmitter *em, uint32_t owner_id) {
 
     /* emitter world position = entity transform pos (or origin) */
     float bx = 0.0f, by = 0.0f;
-    uint32_t tid_tr = ky_world_component_type_by_name(w, "transform");
     if (tid_tr != UINT32_MAX) {
         const kyTransform *tr =
             (const kyTransform *)ky_world_get_component(w, e, tid_tr);
@@ -175,6 +175,10 @@ static void step_particles(kyWorld *w, float dt) {
     uint32_t tid_em = ky_world_component_type_by_name(w, "emitter");
     if (tid_em == UINT32_MAX) return;
 
+    /* Query the "transform" type id once and hand it to emit_one so a
+     * burst of N particles from one emitter does N lookups, not N+1. */
+    uint32_t tid_tr = ky_world_component_type_by_name(w, "transform");
+
     /* 1) Emission: each enabled emitter adds emit_rate*dt to its
      *    accumulator and spawns floor(acc) particles, keeping the
      *    fractional remainder for the next step (deterministic). */
@@ -189,7 +193,7 @@ static void step_particles(kyWorld *w, float dt) {
             int n = (int)em->emit_acc;
             if (n > 0) {
                 em->emit_acc -= (float)n;
-                for (int i = 0; i < n; i++) emit_one(w, e, em, e.id);
+                for (int i = 0; i < n; i++) emit_one(w, e, em, e.id, tid_tr);
             }
         }
         more = ky_view_next(&it);

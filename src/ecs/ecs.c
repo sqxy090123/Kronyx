@@ -139,40 +139,40 @@ static int32_t move_entity(kyWorld *w, uint32_t id, const uint32_t *new_types, u
     size_t new_row = na->count++;
     kyArchetype *oa = old_arch == KY_ARCH_NONE ? NULL : arch_at(w, old_arch);
 
-    for (uint32_t i = 0; i < new_count; ++i) {
-        void *dst = (char *)na->columns[i] + new_row * na->strides[i];
-        memset(dst, 0, na->strides[i]);
-        int kept = 0;
-        if (oa) {
-            int col = arch_has_type(oa, types[i]);
-            if (col >= 0) {
-                memcpy(dst, (char *)oa->columns[col] + old_row * oa->strides[col], na->strides[i]);
-                kept = 1;
-            }
-        }
-        /* Only construct components that are genuinely new; ones carried over
-         * from the old archetype already have live data (memcpy'd above) and
-         * must not have their ctor recalled. */
-        if (!kept) {
-            const kyComponentType *ct = comp_type(w, types[i]);
+    /* Both types[] and oa->types[] are sorted, so merge them with two
+     * pointers in a single O(a+b) pass. For each new column we carry over
+     * the old component data (memcpy) when the type is shared, otherwise
+     * we run its ctor. For each old column not present in the new set we
+     * run its dtor. */
+    uint32_t ni = 0, oj = 0;
+    uint32_t old_count = oa ? oa->type_count : 0;
+    while (ni < new_count || oj < old_count) {
+        int cmp; /* -1: old<new (dtor old)  1: new<old (ctor new)  0: equal (carry) */
+        if (ni >= new_count) cmp = -1;
+        else if (oj >= old_count) cmp = 1;
+        else cmp = oa->types[oj] < types[ni] ? -1 : (oa->types[oj] > types[ni] ? 1 : 0);
+        if (cmp == -1) {
+            /* Old type not in the new set: destroy it. */
+            const kyComponentType *ct = comp_type(w, oa->types[oj]);
+            if (ct->dtor) ct->dtor((char *)oa->columns[oj] + old_row * oa->strides[oj]);
+            ++oj;
+        } else if (cmp == 0) {
+            /* Shared type: carry data into the new column (no ctor). */
+            void *dst = (char *)na->columns[ni] + new_row * na->strides[ni];
+            memcpy(dst, (char *)oa->columns[oj] + old_row * oa->strides[oj], na->strides[ni]);
+            ++ni; ++oj;
+        } else {
+            /* New type not in the old set: construct it. */
+            void *dst = (char *)na->columns[ni] + new_row * na->strides[ni];
+            memset(dst, 0, na->strides[ni]);
+            const kyComponentType *ct = comp_type(w, types[ni]);
             if (ct->ctor) ct->ctor(dst);
+            ++ni;
         }
     }
     na->entity_ids[new_row] = id;
 
-    if (oa) {
-        for (uint32_t i = 0; i < oa->type_count; ++i) {
-            int keep = 0;
-            for (uint32_t j = 0; j < new_count; ++j) {
-                if (types[j] == oa->types[i]) { keep = 1; break; }
-            }
-            if (!keep) {
-                const kyComponentType *ct = comp_type(w, oa->types[i]);
-                if (ct->dtor) ct->dtor((char *)oa->columns[i] + old_row * oa->strides[i]);
-            }
-        }
-        archetype_remove_row(w, oa, old_row);
-    }
+    if (oa) archetype_remove_row(w, oa, old_row);
 
     slot->archetype_index = new_arch;
     slot->row = (uint32_t)new_row;

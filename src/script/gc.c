@@ -402,7 +402,7 @@ size_t ky_gc_run_nursery(struct kyVM *vm) {
     uint32_t root_cap = (uint32_t)vm->stack_top + (uint32_t)vm->gvar_count +
                         (uint32_t)vm->gc_root_count + gc->barrier_count + 1;
     uint8_t **roots = (uint8_t **)malloc((size_t)root_cap * sizeof(uint8_t *));
-    if (!roots) roots = (uint8_t **)(calloc(1, 1)), root_cap = 1; /* should not happen */
+    if (!roots) { roots = NULL; root_cap = 0; } /* OOM: skip root marking; no overflow */
     uint32_t root_count = 0;
     collect_roots(vm, roots, &root_count, root_cap);
     for (uint32_t i = 0; i < root_count; i++) {
@@ -534,7 +534,7 @@ size_t ky_gc_run_full(struct kyVM *vm) {
         uint32_t root_cap = (uint32_t)vm->stack_top + (uint32_t)vm->gvar_count +
                             (uint32_t)vm->gc_root_count + gc->barrier_count + 1;
         uint8_t **roots = (uint8_t **)malloc((size_t)root_cap * sizeof(uint8_t *));
-        if (!roots) roots = (uint8_t **)calloc(1, 1);
+        if (!roots) { roots = NULL; root_cap = 0; } /* OOM: skip root marking */
         uint32_t root_count = 0;
         collect_roots(vm, roots, &root_count, root_cap);
         for (uint32_t i = 0; i < root_count; i++) {
