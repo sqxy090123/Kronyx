@@ -330,16 +330,31 @@ void *ky_world_add_component(kyWorld *w, kyEntity e, uint32_t type_id) {
         void *p = find_comp(w, arch_at(w, slot->archetype_index), slot->row, type_id);
         if (p) return p;
     }
-    kyArray tmp;
-    ky_array_init(&tmp, &w->alloc, sizeof(uint32_t), 8);
+    /* Collect old types + new one. Old archetypes are small in practice,
+     * so a stack buffer covers the common case with zero allocation; only
+     * a very component-heavy entity spills onto the heap. */
+    uint32_t stack[64];
+    uint32_t *heap = NULL, *types;
+    uint32_t count = 0;
+    uint32_t old_count = 0;
+    if (slot->archetype_index != KY_ARCH_NONE) {
+        old_count = arch_at(w, slot->archetype_index)->type_count;
+    }
+    if (old_count + 1 <= 64) {
+        types = stack;
+    } else {
+        heap = (uint32_t *)ky_mem_alloc(&w->alloc, (old_count + 1) * sizeof(uint32_t));
+        if (!heap) return NULL;
+        types = heap;
+    }
     if (slot->archetype_index != KY_ARCH_NONE) {
         kyArchetype *a = arch_at(w, slot->archetype_index);
         for (uint32_t i = 0; i < a->type_count; ++i)
-            ky_array_push(&tmp, &a->types[i]);
+            types[count++] = a->types[i];
     }
-    ky_array_push(&tmp, &type_id);
-    int32_t na = move_entity(w, e.id, (uint32_t *)tmp.data, (uint32_t)tmp.len);
-    ky_array_deinit(&tmp);
+    types[count++] = type_id;
+    int32_t na = move_entity(w, e.id, types, count);
+    if (heap) ky_mem_free(&w->alloc, heap);
     return find_comp(w, arch_at(w, na), slot->row, type_id);
 }
 
@@ -361,13 +376,25 @@ void ky_world_remove_component(kyWorld *w, kyEntity e, uint32_t type_id) {
     kyArchetype *a = arch_at(w, slot->archetype_index);
     if (arch_has_type(a, type_id) < 0) return;
 
-    kyArray tmp;
-    ky_array_init(&tmp, &w->alloc, sizeof(uint32_t), 8);
-    for (uint32_t i = 0; i < a->type_count; ++i) {
-        if (a->types[i] != type_id) ky_array_push(&tmp, &a->types[i]);
+    /* Remaining types after removal. Keep on the stack for the common
+     * small-archetype case; spill to the heap only when the archetype
+     * holds more than 64 component types. */
+    uint32_t stack[64];
+    uint32_t *heap = NULL, *types;
+    uint32_t count = 0;
+    uint32_t remaining = a->type_count - 1;
+    if (remaining <= 64) {
+        types = stack;
+    } else {
+        heap = (uint32_t *)ky_mem_alloc(&w->alloc, remaining * sizeof(uint32_t));
+        if (!heap) return;
+        types = heap;
     }
-    move_entity(w, e.id, (uint32_t *)tmp.data, (uint32_t)tmp.len);
-    ky_array_deinit(&tmp);
+    for (uint32_t i = 0; i < a->type_count; ++i) {
+        if (a->types[i] != type_id) types[count++] = a->types[i];
+    }
+    move_entity(w, e.id, types, count);
+    if (heap) ky_mem_free(&w->alloc, heap);
 }
 
 void ky_world_remove_all_components(kyWorld *w, kyEntity e) {
