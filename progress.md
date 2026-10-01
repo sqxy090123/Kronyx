@@ -245,7 +245,19 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 - `bindings.c::tid_transform` 每 native 调用 O(n) 扫组件类型（可缓存，涉及世界生命周期失效边界）
 - `vm.c` 7 个死 opcode + 30+ 魔术数字替换为枚举常量（体积大改，需全脚本测试覆盖）
 
-**下一刀：按模块深入体检（vm.c 魔术数字、physics SAP active-list）/ G12 Vulkan 后端（需真 GPU）/ 用户指派维护。**
+**已完成：`src/ecs` + `src/engine` 代码体检（2026-10-01）。**
+交付（行为等价，仅优化）：
+- `src/ecs/ecs.c::ky_world_add_component` / `ky_world_remove_component`：原每次调用堆分配一个 `kyArray tmp` 收集"旧类型±新类型"——改为栈 64 槽缓冲（覆盖绝大多数小原型实体，零堆分配），仅当组件数 >64 时才堆降级。消除组件增删热路径的每调用堆分配
+- `src/ecs/ecs.c::move_entity`：（上轮已改）原型移动 O(a×b) 嵌套查找 → 双指针归并 O(a+b)
+
+体检后保留现状的项（行为正确，非本轮无损范围）：
+- `engine.c` 与 `glfw.c` 各有独立 `g_key_state` 数组 + `key_callback`：`ky_engine_key_pressed` 读 engine 的数组，`ky_glfw_key_pressed` 读 glfw 的数组，二者互不影响、各自独立——非重叠，不动
+- `engine.c::ky_engine_run` 的主循环 `update→render→swap` 结构紧凑，`dt` 钳制 0.1s 合理
+- `anti_tamper_dll.cpp`（独立库编译单元，不进主库）与 `anti_tamper_game.c`（集成层）均干净；`#define ROUND_DELAY_MS 800` × 5 轮 = 4s 是设计选择
+
+普通 + ASan 全量 `ctest -j1` 23/23 绿；`ky_demo` 无头冒烟 exit=0。
+
+**下一刀：`src/physics`（SAP active-list、cast_ray 反查索引）+ `src/script`（vm.c 魔术数字、gc 标记循环提取）；或 G12 Vulkan 后端（需真 GPU）/用户指派维护。**
 
 **已完成：安全漏洞扫描与修复——`src/script/vm.c` + `src/script/parser.c`**
 发现并修复 3 个严重 bug：
