@@ -226,7 +226,26 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 
 普通 + ASan 全量 `ctest -j1` 23/23 绿；`ky_test_core`(95 断言)/`core_quality`(437)/`event`(12) 定向全绿；`ky_demo` 无头冒烟 exit=0。
 
-**下一刀：代码体检第二轮（`src/ecs` + `src/scene` + `src/physics`）；或 G12 Vulkan 后端（需真 GPU）/用户指派维护。**
+**已完成：全项目体积 + 算法优化（2026-10-01）。**
+两个并行体检 agent 扫遍 script/render/physics/scene/ecs 全部模块，挑出"行为等价或纯修复"项落地：
+- `src/ecs/ecs.c`：`move_entity` 原型移动里 `new_types ∩ old_types` 是 O(a×b) 嵌套查找——两数组均已排序，改为双指针归并单趟 O(a+b)，同趟完成"新列 ctor / 共享列 memcpy / 旧列 dtor"（组件增删热路径）
+- `src/render/particle2d.c`：`emit_one` 每次发射都查一次 `"transform"` 类型 ID——提升到 `step_particles` 查一次传参，N 粒爆发省 N-1 次 hash 查表；删死宏 `KY_PARTICLE_OWNER_NONE`
+- `src/script/gc.c`：`ky_gc_run_nursery`/`run_full` 的 `malloc` OOM 降级路径 `calloc(1,1)` 后 `root_cap=1`，但 `collect_roots` 按原 `root_cap` 写 `out[0..cap-1]` 会越界——改为 `roots=NULL; root_cap=0`，`collect_roots` 的 `*count<cap` 边界自然跳过，安全降级（真安全修复）
+- `src/scene/scene.c`：save/load 各扫一遍组件类型找 transform/sprite/camera 三 ID——提取 `scene_lookup_type_ids` 共用；删死变量 `cur_ent`/`has_transform`/`saved`
+- `src/render/console_backend.c`：`kyConsoleCmdList` 的 `pipeline_id`/`vbo_stride`/`depth_write` 只写不读——删 3 死字段；buffer 的 `b->data` 堆内存分配但 draw 从不读回（console 后端是纯打印后端）——create 不再分配 backing buffer，省 ~32KB 堆
+- `src/render/gl_backend.c`：真/stub 两变体的 `frame_count` 只 `++` 从不读——删
+- demo 体积 115888 → 111792 字节（省 ~4KB）
+
+普通 + ASan 全量 `ctest -j1` 23/23 绿；`ky_demo` 无头冒烟 exit=0。
+
+**体检中识别但保留现状的项**（需测试验证或涉及公开 API，非本轮无损范围）：
+- `physics.c::cast_ray` collider 反查索引（需改公开 `kyPhysicsWorld` struct，const 路径）
+- `physics.c` broad 自定义 `broad_fn` 的每帧 `calloc`（预分配 +32KB 常驻堆，与省体积冲突；多数场景走内置 SAP 分支不分配）
+- `physics.c::sap_find_pairs` O(n²) active 扫描（SAP 核心路径，n≤1024，改 active list 需大量碰撞测试）
+- `bindings.c::tid_transform` 每 native 调用 O(n) 扫组件类型（可缓存，涉及世界生命周期失效边界）
+- `vm.c` 7 个死 opcode + 30+ 魔术数字替换为枚举常量（体积大改，需全脚本测试覆盖）
+
+**下一刀：按模块深入体检（vm.c 魔术数字、physics SAP active-list）/ G12 Vulkan 后端（需真 GPU）/ 用户指派维护。**
 
 **已完成：安全漏洞扫描与修复——`src/script/vm.c` + `src/script/parser.c`**
 发现并修复 3 个严重 bug：
