@@ -20,7 +20,6 @@ typedef struct kyGLDevice {
     GLuint vao;
     int width;
     int height;
-    int frame_count;
 } kyGLDevice;
 
 typedef struct kyGLShader {
@@ -435,8 +434,7 @@ static void gl_present(void *impl) {
     kyGLDevice *d = (kyGLDevice *)impl;
     if (!d) return;
     glFlush(); /* glFinish blocks the entire CPU/GPU pipeline; flush is enough
-                 * for EGL pbuffer surfaces */
-    d->frame_count++;
+                  * for EGL pbuffer surfaces */
 }
 
 static void gl_clear(void *impl, kyVec4 color, float depth) {
@@ -451,7 +449,6 @@ static void gl_clear(void *impl, kyVec4 color, float depth) {
 typedef struct kyGLDevice {
     int width;
     int height;
-    int frame_count;
 } kyGLDevice;
 
 typedef struct kyGLCmdList {
@@ -468,7 +465,6 @@ static void *gl_create(void *platform_win) {
     if (!d) return NULL;
     d->width = 800;
     d->height = 600;
-    d->frame_count = 0;
     return d;
 }
 

@@ -12,15 +12,11 @@ typedef struct kyConsoleDevice {
 
 typedef struct kyConsoleBuffer {
     size_t size;
-    void *data;
 } kyConsoleBuffer;
 
 typedef struct kyConsoleCmdList {
     kyRenderDevice *rd;
-    int pipeline_id;
-    int vbo_stride;
     int depth_test;
-    int depth_write;
     int cull_mode;
     int blend_on;
     int texture_count;
@@ -70,33 +66,28 @@ static int console_shader_uniform(void *impl, void *shader, const char *name) {
 static void *console_create_buffer(void *impl, size_t size, const void *data, int dynamic) {
     KY_UNUSED(impl);
     KY_UNUSED(dynamic);
+    KY_UNUSED(data);
     kyConsoleBuffer *b = (kyConsoleBuffer *)malloc(sizeof(kyConsoleBuffer));
     if (!b) return NULL;
     b->size = size;
-    b->data = malloc(size > 0 ? size : 1);
-    if (!b->data) {
-        free(b);
-        return NULL;
-    }
-    if (data && size > 0) memcpy(b->data, data, size);
+    /* Console backend is print-only: vertex/index payloads are never read
+     * back by the draw hooks, so we do not allocate a backing buffer. */
     return b;
 }
 
 static void console_destroy_buffer(void *impl, void *buf) {
     KY_UNUSED(impl);
     kyConsoleBuffer *b = (kyConsoleBuffer *)buf;
-    if (!b) return;
-    free(b->data);
     free(b);
 }
 
 static int console_update_buffer(void *impl, void *buf, size_t offset, size_t size, const void *data) {
     KY_UNUSED(impl);
+    KY_UNUSED(data);
     kyConsoleBuffer *b = (kyConsoleBuffer *)buf;
     if (!b || !data || size == 0) return -1;
     if (offset > b->size || size > b->size - offset) return -1;
-    memcpy((char *)b->data + offset, data, size);
-    return 0;
+    return 0; /* bounds checked; payload intentionally dropped */
 }
 
 static void *console_create_texture(void *impl, int w, int h, int ch, const void *px) {
@@ -141,18 +132,15 @@ static void console_set_pipeline(void *cl, void *pipe) {
     if (!cl || !pipe) return;
     kyConsoleCmdList *cmd = (kyConsoleCmdList *)cl;
     int *p = (int *)pipe;
-    cmd->pipeline_id = p[0];
     cmd->depth_test  = p[1];
-    cmd->depth_write = p[2];
     cmd->cull_mode   = p[3];
     cmd->blend_on    = p[4];
 }
 
 static void console_set_vertex_buffer(void *cl, void *vb, uint32_t stride) {
     KY_UNUSED(vb);
-    if (!cl) return;
-    kyConsoleCmdList *cmd = (kyConsoleCmdList *)cl;
-    cmd->vbo_stride = stride;
+    KY_UNUSED(stride);
+    KY_UNUSED(cl);
 }
 
 static void console_set_index_buffer(void *cl, void *ib, uint32_t index_size) {

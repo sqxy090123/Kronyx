@@ -41,8 +41,7 @@ static float lcg_unit(uint32_t *state) {
     return (float)(lcg_next(state) & 0xFFFFFF) / (float)0x1000000u;
 }
 
-/* Find a free slot. owner == KY_PARTICLE_OWNER_NONE means "any free slot". */
-#define KY_PARTICLE_OWNER_NONE UINT32_MAX
+/* Find a free slot. owner == UINT32_MAX means "any free slot". */
 
 static int pool_alloc(void) {
     for (int i = 0; i < KY_PARTICLE_MAX; i++) {
