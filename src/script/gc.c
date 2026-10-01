@@ -80,17 +80,24 @@ static void gc_relocate_roots(struct kyVM *vm, GcRelocation *rels, uint32_t rel_
  * Timing helper
  * --------------------------------------------------------------------------- */
 static int64_t now_ms(void) {
-#ifdef _WIN32
-    LARGE_INTEGER freq, cnt;
-    QueryPerformanceFrequency(&freq);
-    QueryPerformanceCounter(&cnt);
-    return (int64_t)cnt.QuadPart * 1000 / freq.QuadPart;
-#else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-#endif
 }
+
+/* Walk a generation slab and clear the MARKED bit on every object.
+ * Replaces the duplicated mark-clearing loops in ky_gc_run_nursery /
+ * ky_gc_run_full. */
+static void gc_clear_marks(uint8_t *slab, uint32_t used) {
+    for (uint32_t off = 0; off + sizeof(kyGcObject) <= used; ) {
+        kyGcObject *obj = (kyGcObject *)(slab + off);
+        uint32_t next = off + obj->size;
+        off = (next + (KY_GC_OBJ_ALIGN - 1)) & ~(uint32_t)(KY_GC_OBJ_ALIGN - 1);
+        if (off == 0) break;
+        obj->type &= ~KY_GC_OBJ_MARKED;
+    }
+}
+
 
 /* ---------------------------------------------------------------------------
  * ky_gc_obj_in_gen
@@ -377,20 +384,8 @@ size_t ky_gc_run_nursery(struct kyVM *vm) {
     int64_t t0 = now_ms();
 
     /* 1. Clear all marks */
-    /* Nursery */
-    for (uint32_t off = 0; off + sizeof(kyGcObject) <= gc->nursery_used; ) {
-        kyGcObject *obj = (kyGcObject *)(gc->nursery + off);
-        off = (off + obj->size + (KY_GC_OBJ_ALIGN - 1)) & ~(uint32_t)(KY_GC_OBJ_ALIGN - 1);
-        if (off == 0) break;
-        obj->type &= ~KY_GC_OBJ_MARKED;
-    }
-    /* Tenured */
-    for (uint32_t off = 0; off + sizeof(kyGcObject) <= gc->tenured_used; ) {
-        kyGcObject *obj = (kyGcObject *)(gc->tenured + off);
-        off = (off + obj->size + (KY_GC_OBJ_ALIGN - 1)) & ~(uint32_t)(KY_GC_OBJ_ALIGN - 1);
-        if (off == 0) break;
-        obj->type &= ~KY_GC_OBJ_MARKED;
-    }
+    gc_clear_marks(gc->nursery, gc->nursery_used);
+    gc_clear_marks(gc->tenured, gc->tenured_used);
 
     /* 2. Handle barrier log (mark old->new reverse edges) */
     ky_gc_handle_barrier(vm);
@@ -478,12 +473,7 @@ size_t ky_gc_run_nursery(struct kyVM *vm) {
     free(rels);
 
     /* Clear all remaining marks */
-    for (uint32_t off = 0; off + sizeof(kyGcObject) <= write; ) {
-        kyGcObject *obj = (kyGcObject *)(gc->nursery + off);
-        off = (off + obj->size + (KY_GC_OBJ_ALIGN - 1)) & ~(uint32_t)(KY_GC_OBJ_ALIGN - 1);
-        if (off == 0) break;
-        obj->type &= ~KY_GC_OBJ_MARKED;
-    }
+    gc_clear_marks(gc->nursery, write);
 
     gc->nursery_used = write;
     gc->gc_count_n++;
@@ -513,18 +503,8 @@ size_t ky_gc_run_full(struct kyVM *vm) {
     int64_t t0 = now_ms();
 
     /* Clear all marks in both generations */
-    for (uint32_t off = 0; off + sizeof(kyGcObject) <= gc->nursery_used; ) {
-        kyGcObject *obj = (kyGcObject *)(gc->nursery + off);
-        off = (off + obj->size + (KY_GC_OBJ_ALIGN - 1)) & ~(uint32_t)(KY_GC_OBJ_ALIGN - 1);
-        if (off == 0) break;
-        obj->type &= ~KY_GC_OBJ_MARKED;
-    }
-    for (uint32_t off = 0; off + sizeof(kyGcObject) <= gc->tenured_used; ) {
-        kyGcObject *obj = (kyGcObject *)(gc->tenured + off);
-        off = (off + obj->size + (KY_GC_OBJ_ALIGN - 1)) & ~(uint32_t)(KY_GC_OBJ_ALIGN - 1);
-        if (off == 0) break;
-        obj->type &= ~KY_GC_OBJ_MARKED;
-    }
+    gc_clear_marks(gc->nursery, gc->nursery_used);
+    gc_clear_marks(gc->tenured, gc->tenured_used);
 
     /* Barrier log */
     ky_gc_handle_barrier(vm);
@@ -615,18 +595,8 @@ size_t ky_gc_run_full(struct kyVM *vm) {
         free(rels_t);
 
         /* Clear remaining marks */
-        for (uint32_t off = 0; off + sizeof(kyGcObject) <= nw; ) {
-            kyGcObject *obj = (kyGcObject *)(gc->nursery + off);
-            off = (off + obj->size + (KY_GC_OBJ_ALIGN - 1)) & ~(uint32_t)(KY_GC_OBJ_ALIGN - 1);
-            if (off == 0) break;
-            obj->type &= ~KY_GC_OBJ_MARKED;
-        }
-        for (uint32_t off = 0; off + sizeof(kyGcObject) <= tw; ) {
-            kyGcObject *obj = (kyGcObject *)(gc->tenured + off);
-            off = (off + obj->size + (KY_GC_OBJ_ALIGN - 1)) & ~(uint32_t)(KY_GC_OBJ_ALIGN - 1);
-            if (off == 0) break;
-            obj->type &= ~KY_GC_OBJ_MARKED;
-        }
+        gc_clear_marks(gc->nursery, nw);
+        gc_clear_marks(gc->tenured, tw);
 
         gc->gc_count_t++;
         int64_t dt = now_ms() - t0;
