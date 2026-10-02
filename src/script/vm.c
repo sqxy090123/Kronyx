@@ -12,12 +12,12 @@ typedef enum kyOpCode {
     OP_MOD,      OP_NEG,          OP_NOT,      OP_BNOT,     OP_EQ,
     OP_NEQ,      OP_LT,           OP_LE,       OP_GT,       OP_GE,
     OP_AND,      OP_OR,                  OP_BAND = 22, OP_BOR,  OP_BXOR,
-    OP_BSHL,     OP_BSHR,         OP_NEWARRAY = 27, OP_LOADSTRING = 28,
-    OP_GETFIELD = 30,              OP_SETFIELD, OP_GETINDEX, OP_SETINDEX,
+    OP_BSHL,     OP_BSHR,         OP_LOADSTRING = 28,
+    OP_GETFIELD = 30,
     OP_GETGLOBAL = 32,              OP_SETGLOBAL,
-    OP_CLOSURE  = 40,              OP_CALL,    OP_TAILCALL, OP_RETURN,
+    OP_CALL     = 41,              OP_RETURN,
     OP_JUMP     = 50,              OP_JMPIF,   OP_JMPIFNOT,
-    OP_INVOKE   = 60,              OP_NATIVECALL,
+    OP_NATIVECALL = 61,
     OP_EXIT,
     /* GC ops (80+) */
     OP_NEWHDR   = 80,  /* A=dest, B=byte_len */
