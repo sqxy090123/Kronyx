@@ -241,7 +241,7 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 **体检中识别但保留现状的项**（需测试验证或涉及公开 API，非本轮无损范围）：
 - `physics.c::sap_find_pairs` O(n²) active 扫描（SAP 核心路径，n≤1024，改 active list 需大量碰撞测试）
 - `bindings.c::tid_transform` 每 native 调用 O(n) 扫组件类型（可缓存，涉及世界生命周期失效边界）
-- `vm.c` 7 个死 opcode + 30+ 魔术数字替换为枚举常量（体积大改，需全脚本测试覆盖）
+- `vm.c` 魔术数字已枚举化 + 7 死 opcode 已清理（见上方各"已完成"小节）
 
 **已完成：`src/ecs` + `src/engine` 代码体检（2026-10-01）。**
 交付（行为等价，仅优化）：
@@ -265,9 +265,14 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 体检后保留现状的项（非本轮无损范围）：
 - `physics.c::sap_find_pairs` O(n²) active 扫描：SAP 核心路径，n≤1024，改 active-list 需大量碰撞测试覆盖
 - `bindings.c::tid_transform` 每 native 调用 O(n) 扫组件类型：可缓存，但涉及世界生命周期失效边界
-- `vm.c` 死 opcode 清理（`OP_LOADINT/OP_LOADFLOAT/OP_CLOSURE/OP_INVOKE/OP_NEWARRAY/OP_SETFIELD/OP_SETINDEX` 编译器从不发射、运行时也无 case 分支）：删枚举项 + 运行时 case 属行为大改，且需确认无外部手写字节码依赖，单独开坑
 
-**下一刀：`vm.c` 死 opcode 清理（枚举项 + 运行时 case 双删，需全脚本测试矩阵 + 手写字节码依赖核查）；或 G12 Vulkan 后端（需真 GPU）/ 用户指派维护。**
+**已完成：`vm.c` 死 opcode 清理（2026-10-01）。**
+删除 7 个"三无一" opcode（无编译器发射、无运行时 case、无外部引用）：`OP_NEWARRAY/OP_GETINDEX/OP_SETINDEX/OP_SETFIELD/OP_CLOSURE/OP_TAILCALL/OP_INVOKE`（`873941d`）。
+- 关键陷阱：旧枚举 `OP_GETINDEX=32`/`OP_SETINDEX=33` 与 `OP_GETGLOBAL=32`/`OP_SETGLOBAL=33` 数值冲突（索引访问语义从未真正实现），删除后冲突自然消除。
+- 全部显式 `=N` 锚点保留，已用独立枚举展开脚本逐位核对：所有活 opcode 数值逐位不变（普通+ASan 各 23/23 绿、`ky_demo` exit=0）。
+- `OP_LOADINT`/`OP_LOADFLOAT` 保留：运行时确有 case 分支（L140/143）且测试注释引用其"32 位截断"设计语义。
+
+**下一刀：G12 Vulkan 后端（需真 GPU，本无头环境受阻）；或用户指派维护 / 新一轮模块代码体检（`src/render`、`src/2d`、`src/audio` 尚未做体检）。**
 
 **已完成：安全漏洞扫描与修复——`src/script/vm.c` + `src/script/parser.c`**
 发现并修复 3 个严重 bug：
