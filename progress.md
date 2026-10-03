@@ -272,7 +272,18 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 - 全部显式 `=N` 锚点保留，已用独立枚举展开脚本逐位核对：所有活 opcode 数值逐位不变（普通+ASan 各 23/23 绿、`ky_demo` exit=0）。
 - `OP_LOADINT`/`OP_LOADFLOAT` 保留：运行时确有 case 分支（L140/143）且测试注释引用其"32 位截断"设计语义。
 
-**下一刀：G12 Vulkan 后端（需真 GPU，本无头环境受阻）；或用户指派维护 / 新一轮模块代码体检（`src/render`、`src/2d`、`src/audio` 尚未做体检）。**
+**下一刀：G12 Vulkan 后端（需真 GPU，本无头环境受阻）；或用户指派维护 / 新一轮模块代码体检。**
+
+**已完成：`src/render` + `src/audio` 模块代码体检（2026-10-02）。**
+逐一读 `audio.c`/`2d.c`/`particle2d.c`/`render.c`/`gl_backend.c`/`console_backend.c`/`anim2d.c`，定位唯一热路径性能问题并修复：
+- `src/render/particle2d.c`：`pool_alloc` 每次 emit 全池线性扫 `KY_PARTICLE_MAX`(16384) 找空槽，改为 lazy-seed free-list 栈（`g_free_stack`/`g_free_top`）O(1) 弹/压（`3d7e176`）。行为等价：粒子测试只断言 `ky_particle2d_alive_count()` 相对差值，从不依赖具体槽位索引，故 LIFO 分配顺序变化安全。
+- 体检后保留现状的项：
+  - `audio.c::clip_is_dead` O(dead) 扫描：dead 集上界 `KY_AUDIO_MAX_VOICES`(32) 极小，且是防 use-after-free 的正确性机制，不动
+  - `2d.c::render_frame` 每帧 `qsort` 排序 sprite（最多 16384）：渲染固有序，`item_cmp` 三级排序必要，不动
+  - `2d.c` 批次内 `sp->texture ? ... : white` 表达式重复计算：微优化，不值得动
+  - `gl_backend.c`/`console_backend.c` 资源创建/销毁配对正确，无泄漏
+
+**下一刀：G12 Vulkan 后端（需真 GPU，本无头环境受阻）；或用户指派维护 / 剩余模块代码体检（`src/engine`、`src/ecs` 之外的大模块已覆盖；`src/math`、`src/resource`、`src/scene` 尚未做体检）。**
 
 **已完成：安全漏洞扫描与修复——`src/script/vm.c` + `src/script/parser.c`**
 发现并修复 3 个严重 bug：
