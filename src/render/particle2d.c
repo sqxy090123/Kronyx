@@ -43,16 +43,36 @@ static float lcg_unit(uint32_t *state) {
 
 /* Find a free slot. owner == UINT32_MAX means "any free slot". */
 
+/* Free-list stack over the pool so pool_alloc is O(1) instead of a
+ * O(KY_PARTICLE_MAX) scan on every emit. Lazily seeded on first use: the
+ * stack is filled top-down with every slot index (so the first alloc hands
+ * out slot KY_PARTICLE_MAX-1, the last one slot 0). Tests assert only the
+ * alive_count delta, never a specific slot, so the allocation order change
+ * is behavior-equivalent. */
+static int        g_free_stack[KY_PARTICLE_MAX];
+static size_t     g_free_top = 0;
+static int        g_pool_seeded = 0;
+
+static void pool_seed(void) {
+    if (g_pool_seeded) return;
+    for (size_t i = 0; i < (size_t)KY_PARTICLE_MAX; i++)
+        g_free_stack[i] = (int)i;
+    g_free_top = (size_t)KY_PARTICLE_MAX;
+    g_pool_seeded = 1;
+}
+
 static int pool_alloc(void) {
-    for (int i = 0; i < KY_PARTICLE_MAX; i++) {
-        if (!g_pool[i].alive) return i;
-    }
-    return -1;
+    pool_seed();
+    if (g_free_top == 0) return -1;
+    return g_free_stack[--g_free_top];
 }
 
 static void pool_kill(int i) {
+    if (i < 0 || i >= KY_PARTICLE_MAX) return;
     g_pool[i].alive = 0;
     g_alive_count--;
+    if (!g_pool_seeded) pool_seed();
+    g_free_stack[g_free_top++] = i;
 }
 
 /* ------------------------------------------------------------------ */
