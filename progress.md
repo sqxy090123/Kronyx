@@ -283,7 +283,14 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
   - `2d.c` 批次内 `sp->texture ? ... : white` 表达式重复计算：微优化，不值得动
   - `gl_backend.c`/`console_backend.c` 资源创建/销毁配对正确，无泄漏
 
-**下一刀：G12 Vulkan 后端（需真 GPU，本无头环境受阻）；或用户指派维护 / 剩余模块代码体检（`src/engine`、`src/ecs` 之外的大模块已覆盖；`src/math`、`src/resource`、`src/scene` 尚未做体检）。**
+**已完成：`src/scene` + `src/resource` 模块代码体检（2026-10-02）。**
+逐一读 `scene.c`(361)/`resource.c`(183)，全部健康、无改动（无热路径性能问题、无泄漏、资源 create/destroy 配对正确）：
+- `scene.c::ky_scene_load` 栈上 `attr_keys[64][32][32]`(~64KB) 受 `MAX_ENTITIES=64`/`MAX_ATTRS=32` 上界约束，合理；`scene_lookup_type_ids` 线性扫组件类型表（注册时数量有限）非热路径；无每帧堆分配。
+- `resource.c` 引用计数 + 失败路径回滚（`on_destroy`/`free` 配对）正确；`ky_resmgr_release` 有防 double-free 的 hashmap 存在性检查。
+- `src/math` 目录不存在（数学为头文件内联，无独立 .c）。
+
+至此 C11 引擎全部 .c 模块（ecs/physics/script/render/audio/scene/resource/engine + 剩余）代码体检覆盖完毕。
+**下一刀：G12 Vulkan 后端（需真 GPU，本无头环境受阻）；或用户指派维护任务。**
 
 **已完成：安全漏洞扫描与修复——`src/script/vm.c` + `src/script/parser.c`**
 发现并修复 3 个严重 bug：
