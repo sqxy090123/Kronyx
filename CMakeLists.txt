@@ -52,6 +52,7 @@ add_library(ky_engine STATIC
   src/render/render.c
   src/render/console_backend.c
   src/render/gl_backend.c
+  src/render/vulkan_backend.c
   src/render/2d.c
   src/render/anim2d.c
   src/render/particle2d.c
@@ -79,6 +80,19 @@ if(KY_EGL_INCLUDE_DIR AND KY_EGL_LIBRARY AND KY_GLES_LIBRARY)
   message(STATUS "Kronyx: EGL/GLES backend enabled")
 else()
   message(STATUS "Kronyx: EGL/GLES not found, gl backend = stub")
+endif()
+
+# 可选 Vulkan 后端（无则 vulkan_backend 回落 stub）；headless 环境可用
+# lavapipe 软件驱动枚举出 CPU device
+find_path(KY_VULKAN_INCLUDE_DIR vulkan/vulkan.h)
+find_library(KY_VULKAN_LIBRARY vulkan)
+if(KY_VULKAN_INCLUDE_DIR AND KY_VULKAN_LIBRARY)
+  target_compile_definitions(ky_engine PUBLIC KY_HAS_VULKAN=1)
+  target_include_directories(ky_engine PUBLIC ${KY_VULKAN_INCLUDE_DIR})
+  target_link_libraries(ky_engine PUBLIC ${KY_VULKAN_LIBRARY})
+  message(STATUS "Kronyx: Vulkan backend enabled")
+else()
+  message(STATUS "Kronyx: Vulkan not found, vulkan backend = stub")
 endif()
 
 if(KYR_BUILD_TESTS)

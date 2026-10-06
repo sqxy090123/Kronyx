@@ -90,7 +90,7 @@ G1 是整条产品线的主轴。G2 已在 G1 绿后落地最小集。
 | G9 | 关节 / constraints | 3D 或复杂 2D 需要时 | **完成**：`physics.h/c` 加 `kyConstraintDesc`（DISTANCE/HINGE）+ `add/remove/get_constraint_count`；`body_id=0` 端为静止世界；step 末尾单次迭代位置投影+速度消除（inv_mass 权重）；`kyPhysicsWorld` 静态 256 约束数组；`test_physics.c` +15 断言 |
 | G10 | **粒子** ✅ | G7 之后 | `particle2d.h/c`：emitter 组件 + particle-update 系统 + 16384 静态池 + xorshift32 确定性模拟 + `render_frame` 内置粒子 pass（console/GL 零改动）；`test_particle.c` 30 断言；demo role 跳跃/落地脉冲 |
 | G11 | **音频** ✅ | 至少 G1 可玩 | `audio.h/c`：参数化 SFX 合成器（正弦扫频/方波/噪声/单击）+ 32 并发 voice + null-sink mix buffer（进程内 float，零系统库依赖）+ ECS `"sound"` 组件 + `audio-update` 系统；`test_audio.c` 61 断言；demo 跳跃/落地 SFX 脉冲 |
-| G12 | Vulkan 后端 | 真 GPU 环境 | 枚举已预留 `KY_RENDERER_VULKAN`；软渲染环境不做 |
+| G12 | **Vulkan 后端** ✅ | lavapipe 软件驱动已可用 | `vulkan_backend.c`：实/stub 双变体（`KY_HAS_VULKAN`），真实枚举 lavapipe CPU device，create 走 instance→physical→queue→color image→readback host buf→fence 全链；pipeline 止步于 renderpass+layout（无 SPIR-V 编译器，`p->pipe=0`，destroy 守卫）；`render.c` 加 `KY_RENDERER_VULKAN` dispatch；CMake 探测 `vulkan/vulkan.h`+`libvulkan`；`test_render.c` 加无条件 vulkan 资源生命周期段（28/28）。真 GPU 光栅化 + 像素读回 deferred |
 | G13 | 3D Renderer 组件 | Vulkan 或真 GL 3D 需求 | 2D 管线不冒充 3D |
 | G14 | APK 打包 | 移动目标明确时 | **完成**：`pack.c::pack_apk` 生成可部署 Android 工程骨架（manifest + Activity + JNI 桥 + NDK CMake + assets/game.kyx）；`ky_runtime`/anti_tamper/`ky_demo` 加 `NOT ANDROID` 守卫；规格在 `.monkeycode/specs/android-apk-packaging/`。真实 NDK 交叉编译 + gradle + 签名 deferred |
 | G15 | 脚本 GC / 对象模型 | 长驻 VM 泄漏成为事实 | 现在是 strdup/free |
@@ -272,7 +272,14 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 - 全部显式 `=N` 锚点保留，已用独立枚举展开脚本逐位核对：所有活 opcode 数值逐位不变（普通+ASan 各 23/23 绿、`ky_demo` exit=0）。
 - `OP_LOADINT`/`OP_LOADFLOAT` 保留：运行时确有 case 分支（L140/143）且测试注释引用其"32 位截断"设计语义。
 
-**下一刀：G12 Vulkan 后端（需真 GPU，本无头环境受阻）；或用户指派维护 / 新一轮模块代码体检。**
+**已完成：G12 Vulkan 渲染后端接入** (2026-10-06)
+- 推进条件已变化：本无头环境装有 Mesa lavapipe（`lvp_icd`）软件 Vulkan 驱动 + `libvulkan`，`vkCreateInstance` 成功枚举出 1 个 CPU device（`llvmpipe`，apiVer 1.3.230）。旧"需真 GPU、受阻"判断不再成立。
+- 新增 `src/render/vulkan_backend.c`，仿 `gl_backend.c` 的 `#ifdef` 双变体模式：`KY_HAS_VULKAN` 实变体真枚举 lavapipe device，create 走 instance→physical→graphics queue→device-local color image+view→host readback buffer→fence 全资源链；stub 变体与 GL stub 同形。
+- `render_backend.h` 加 `extern ky_backend_vulkan`；`render.c` dispatch 加 `case KY_RENDERER_VULKAN`；`CMakeLists.txt` 探测 `vulkan/vulkan.h`+`libvulkan` 并传 `KY_HAS_VULKAN`。
+- 关键设计取舍：本 RHI 未内嵌 shaderc/spirv-cross，无合法 SPIR-V 二进制可喂 `vkCreateGraphicsPipelines`（lvp 对空 SPIR-V 反射会 memmove 空指针崩）。故 pipeline 止步于真建 renderpass+pipeline-layout（仍走 lvp 驱动），`p->pipe` 置 0，destroy 守卫 `if(p->pipe)`；像素读回与真光栅化 deferred。
+- `test_render.c` 加无条件 Vulkan 资源生命周期段（create/shader/buffer/texture/pipeline/begin/submit/cancel/destroy），普通+ASan 构建下 28/28 断言全绿，ctest 23/23，`ky_demo` 头less exit=0。
+
+**下一刀：Vulkan 像素读回 + 真光栅化（需内嵌合法 SPIR-V 或引入 spirv-cross）；或 G13 3D Renderer 组件；或用户指派维护 / 模块体检。**
 
 **已完成：`src/render` + `src/audio` 模块代码体检（2026-10-02）。**
 逐一读 `audio.c`/`2d.c`/`particle2d.c`/`render.c`/`gl_backend.c`/`console_backend.c`/`anim2d.c`，定位唯一热路径性能问题并修复：

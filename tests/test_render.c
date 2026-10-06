@@ -98,6 +98,48 @@ int main(void) {
     ky_rd_destroy(rd);
     ky_rd_destroy(rd_gl);
 
+    /* Vulkan backend (stub or real lavapipe) — resource lifecycle must not
+     * crash and the backend name/enum must round-trip. */
+    kyRenderDevice *rd_vk = ky_rd_create(KY_RENDERER_VULKAN, NULL);
+    ASSERT(rd_vk != NULL, "create Vulkan renderer succeeds");
+    if (rd_vk) {
+        ASSERT(strcmp(ky_rd_backend_name(rd_vk), "vulkan") == 0,
+               "Vulkan backend name is 'vulkan'");
+        ASSERT(ky_rd_backend(rd_vk) == KY_RENDERER_VULKAN,
+               "Vulkan backend enum is VULKAN");
+        kyShaderSource vsrc = { .vs = "v", .fs = "f", .cs = NULL, .entry = "main" };
+        kyShader *sh = ky_rd_create_shader(rd_vk, &vsrc);
+        ASSERT(sh != NULL, "Vulkan shader create");
+        kyBuffer *vbuf = ky_rd_create_buffer(rd_vk, 64, NULL, 0);
+        ASSERT(vbuf != NULL, "Vulkan buffer create");
+        kyTexture *vtex = ky_rd_create_texture_2d(rd_vk, 16, 16, 4, NULL);
+        ASSERT(vtex != NULL, "Vulkan texture create");
+        kyVec4 vcol = {0.1f, 0.5f, 0.9f, 1.0f};
+        kyPipelineDesc vdesc = {0};
+        vdesc.shader = sh;
+        vdesc.topology = KY_TRIANGLES;
+        vdesc.blend.on = 1;
+        vdesc.blend.color = vcol;
+        kyPipeline *vpipe = ky_rd_create_pipeline(rd_vk, &vdesc);
+        ASSERT(vpipe != NULL, "Vulkan pipeline create");
+        void *vcl = ky_rd_begin(rd_vk);
+        ASSERT(vcl != NULL, "Vulkan command list begin");
+        ky_cmd_set_pipeline(vcl, vpipe);
+        ky_cmd_set_vertex_buffer(vcl, vbuf, 8);
+        ky_cmd_draw_array(vcl, 3, 1);
+        ky_rd_clear(rd_vk, vcol, 1.0f);
+        ky_rd_submit(rd_vk, vcl);
+        ky_rd_present(rd_vk);
+        void *vcl2 = ky_rd_begin(rd_vk);
+        ky_cmd_set_pipeline(vcl2, vpipe);
+        ky_rd_cancel(rd_vk, vcl2);
+        ky_rd_destroy_pipeline(rd_vk, vpipe);
+        ky_rd_destroy_texture(rd_vk, vtex);
+        ky_rd_destroy_buffer(rd_vk, vbuf);
+        ky_rd_destroy_shader(rd_vk, sh);
+        ky_rd_destroy(rd_vk);
+    }
+
 #ifdef KY_HAS_EGL
 #include <GLES3/gl3.h>
 

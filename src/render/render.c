@@ -14,6 +14,7 @@ kyRenderDevice *ky_rd_create(kyRendererBackend backend, void *platform_win) {
     switch (backend) {
         case KY_RENDERER_CONSOLE: vt = &ky_backend_console; break;
         case KY_RENDERER_GL:      vt = &ky_backend_gl;      break;
+        case KY_RENDERER_VULKAN:  vt = &ky_backend_vulkan;  break;
         default: return NULL;
     }
 

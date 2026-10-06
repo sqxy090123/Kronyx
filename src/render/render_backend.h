@@ -77,5 +77,6 @@ struct kyRenderDevice {
 
 extern const kyRenderBackend ky_backend_console;
 extern const kyRenderBackend ky_backend_gl;
+extern const kyRenderBackend ky_backend_vulkan;
 
 #endif
