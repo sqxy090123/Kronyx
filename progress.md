@@ -307,7 +307,7 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 
 **回归门：** 普通 `ctest -j1` 23/23 绿；ASan `detect_leaks=0` 23/23 绿；`ky_demo` exit=0；`-O3` Release 单测 33/33 绿。
 
-**下一刀：G12 Vulkan 后端（需真 GPU，本无头环境受阻）；或用户指派维护任务。**
+**下一刀：G12 Vulkan 像素读回 + 真光栅化（需内嵌合法 SPIR-V 或引入 spirv-cross）；或 G13 3D Renderer 组件；或用户指派维护 / 模块体检。**
 物理模块新增 distance / hinge 两类运动学约束，落地 P3-G9（"2D 复杂碰撞体或物理动画"）：
 - `include/kronyx/physics.h`：`kyConstraintType`（DISTANCE/HINGE）、`kyConstraintDesc`（type/双 body id/双 anchor 局部坐标/distance/angle_offset/enabled）、`KY_PHYSICS_MAX_CONSTRAINTS=256`、`add/remove/get_constraint_count` API；`body_id=0` 端为静止世界
 - `src/physics/physics.c` + `physics_internal.h`：`kyPhysConstraint` 静态 256 数组（无堆）；`phys_apply_constraints` 在 `ky_physics_step` 碰撞事件 emit 之后运行，单次迭代"位置投影 + 速度消除"按 inv_mass 权重分配；anchor 世界坐标经 `ky_quat_rotate`，hinge 角度经 `ky_quat_axis_angle(Z,·)`
