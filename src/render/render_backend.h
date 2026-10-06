@@ -27,6 +27,7 @@ typedef void  (*kybe_set_uniform_fn)(void *cl, int loc, const void *data, int by
 typedef void  (*kybe_draw_indexed_fn)(void *cl, uint32_t count, uint32_t instances);
 typedef void  (*kybe_draw_array_fn)(void *cl, uint32_t vertex_count, uint32_t instances);
 typedef void  (*kybe_submit_fn)(void *impl, void *cl);
+typedef void  (*kybe_cancel_fn)(void *impl, void *cl);
 typedef void  (*kybe_present_fn)(void *impl);
 typedef void  (*kybe_clear_fn)(void *impl, kyVec4 color, float depth);
 typedef void  (*kybe_draw_pass_fn)(void *impl, const kyPipelineDesc *pd,
@@ -60,6 +61,7 @@ typedef struct kyRenderBackend {
     kybe_draw_indexed_fn     draw_indexed;
     kybe_draw_array_fn       draw_array;
     kybe_submit_fn           submit;
+    kybe_cancel_fn           cancel;
     kybe_present_fn          present;
     kybe_clear_fn            clear;
 } kyRenderBackend;

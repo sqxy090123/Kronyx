@@ -154,6 +154,14 @@ void ky_rd_submit(kyRenderDevice *rd, void *cl) {
     rd->vt->submit(rd->impl, cl);
 }
 
+void ky_rd_cancel(kyRenderDevice *rd, void *cl) {
+    /* Discard a begun command list without rendering.  Backend's cancel owns
+     * the cl allocation (frees it, like submit).  Used when a frame is
+     * aborted between ky_rd_begin and ky_rd_submit. */
+    if (!rd || !cl) return;
+    rd->vt->cancel(rd->impl, cl);
+}
+
 void ky_rd_present(kyRenderDevice *rd) {
     if (!rd) return;
     rd->vt->present(rd->impl);

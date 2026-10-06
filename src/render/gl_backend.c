@@ -430,6 +430,12 @@ static void gl_submit(void *impl, void *cl) {
     free(cl);
 }
 
+static void gl_cancel(void *impl, void *cl) {
+    /* Abort a begun command list: same ownership as submit — free it. */
+    if (!impl || !cl) return;
+    free(cl);
+}
+
 static void gl_present(void *impl) {
     kyGLDevice *d = (kyGLDevice *)impl;
     if (!d) return;
@@ -599,6 +605,11 @@ static void gl_submit(void *impl, void *cl) {
     free(cl);
 }
 
+static void gl_cancel(void *impl, void *cl) {
+    KY_UNUSED(impl);
+    free(cl);
+}
+
 static void gl_present(void *impl) {
     KY_UNUSED(impl);
 }
@@ -634,6 +645,7 @@ const kyRenderBackend ky_backend_gl = {
     .draw_indexed     = gl_draw_indexed,
     .draw_array       = gl_draw_array,
     .submit           = gl_submit,
+    .cancel           = gl_cancel,
     .present          = gl_present,
     .clear            = gl_clear,
 };

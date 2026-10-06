@@ -76,11 +76,25 @@ int main(void) {
     ky_rd_clear(rd, col, 1.0f);
     ky_rd_submit(rd, cl);
 
+    /* Cancel path: a begun command list that is aborted before submit must
+     * release its backend allocation (the known leak this closes).  Run it
+     * before destroying the pipeline so cl2's referenced resources are still
+     * valid. */
+    void *cl2 = ky_rd_begin(rd);
+    ASSERT(cl2 != NULL, "cancel: begin command list for abort");
+    ky_cmd_set_pipeline(cl2, p);
+    ky_rd_cancel(rd, cl2); /* cl2 now owned/freed by the backend */
+
+    /* Cancel with NULL is a safe no-op. */
+    ky_rd_cancel(rd, NULL);
+    ky_rd_cancel(NULL, NULL);
+
     /* Destroy */
     ky_rd_destroy_pipeline(rd, p);
     ky_rd_destroy_texture(rd, tex);
     ky_rd_destroy_buffer(rd, vb);
     ky_rd_destroy_shader(rd, s);
+
     ky_rd_destroy(rd);
     ky_rd_destroy(rd_gl);
 

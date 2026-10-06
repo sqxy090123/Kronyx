@@ -93,6 +93,7 @@ KY_API void     ky_cmd_set_uniform(void *cl, int location, const void *data, int
 KY_API void     ky_cmd_draw_indexed(void *cl, uint32_t count, uint32_t instances);
 KY_API void     ky_cmd_draw_array(void *cl, uint32_t vertex_count, uint32_t instances);
 KY_API void     ky_rd_submit(kyRenderDevice *rd, void *cl);
+KY_API void     ky_rd_cancel(kyRenderDevice *rd, void *cl);
 KY_API void     ky_rd_present(kyRenderDevice *rd);
 KY_API void     ky_rd_clear(kyRenderDevice *rd, kyVec4 clear_color, float clear_depth);
 

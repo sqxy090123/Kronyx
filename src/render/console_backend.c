@@ -188,6 +188,12 @@ static void console_submit(void *impl, void *cl) {
     free(cl);
 }
 
+static void console_cancel(void *impl, void *cl) {
+    /* Abort a begun command list: same ownership as submit — free it. */
+    KY_UNUSED(impl);
+    free(cl);
+}
+
 static void console_present(void *impl) {
     kyConsoleDevice *d = (kyConsoleDevice *)impl;
     d->frame_count++;
@@ -223,6 +229,7 @@ const kyRenderBackend ky_backend_console = {
     .draw_indexed     = console_draw_indexed,
     .draw_array       = console_draw_array,
     .submit           = console_submit,
+    .cancel           = console_cancel,
     .present          = console_present,
     .clear            = console_clear,
 };
