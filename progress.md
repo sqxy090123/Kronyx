@@ -293,13 +293,20 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 
 **已完成：G9 关节 / 物理约束系统（2026-10-02，`76f71df`）。**
 物理模块新增 distance / hinge 两类运动学约束，落地 P3-G9（"2D 复杂碰撞体或物理动画"）：
-- `include/kronyx/physics.h`：`kyConstraintType`（DISTANCE/HINGE）、`kyConstraintDesc`（type/双 body id/双 anchor 局部坐标/distance/angle_offset/enabled）、`KY_PHYSICS_MAX_CONSTRAINTS=256`、`add/remove/get_constraint_count` API。`body_id=0` 端为静止世界（无穷质量，anchor 为世界坐标）。
-- `src/physics/physics.c` + `physics_internal.h`：`kyPhysConstraint` 静态 256 数组（无堆）；`phys_apply_constraints` 在 `ky_physics_step` 碰撞事件 emit 之后运行，单次迭代"位置投影 + 速度消除"按 inv_mass 权重分配；anchor 世界坐标经 `ky_quat_rotate`，hinge 角度经 `ky_quat_axis_angle(Z,·)` + `ky_quat_normalize`。除零守卫（anchor 重合跳过）。
-- 设计取舍：单迭代求解器（非 Box2D 多子步），静止端对称，不触发 `KY_EVENT_COLLIDE`。规格在 `.monkeycode/specs/joint-constraints/`。
+- `include/kronyx/physics.h`：`kyConstraintType`（DISTANCE/HINGE）、`kyConstraintDesc`（type/双 body id/双 anchor 局部坐标/distance/angle_offset/enabled）、`KY_PHYSICS_MAX_CONSTRAINTS=256`、`add/remove/get_constraint_count` API；`body_id=0` 端为静止世界
+- `src/physics/physics.c` + `physics_internal.h`：`kyPhysConstraint` 静态 256 数组（无堆）；`phys_apply_constraints` 在 `ky_physics_step` 碰撞事件 emit 之后运行，单次迭代"位置投影 + 速度消除"按 inv_mass 权重分配；anchor 世界坐标经 `ky_quat_rotate`，hinge 角度经 `ky_quat_axis_angle(Z,·)`
+- 设计取舍：单迭代求解器（非 Box2D 多子步），静止端对称，不触发 `KY_EVENT_COLLIDE`。规格在 `.monkeycode/specs/joint-constraints/`
 
 **回归门：** `test_physics.c` +15 断言；全量 `ctest -j1` 23/23 绿；ASan `detect_leaks=0` 23/23 绿；`ky_demo` 无头冒烟 exit=0。
 
-**下一刀：命令列表 cancel 路径（已知债，`render.c` begin 不 submit 泄漏）；或 G14 APK 打包；或 G12 Vulkan 后端（需真 GPU，本无头环境受阻）。**
+**已完成：render cmd-list cancel 路径清债（2026-10-02，`70929bb`）。**
+修掉已知债"`ky_rd_begin` 后未 `submit` 泄漏 cmd-list"：
+- `render.h` 加 `ky_rd_cancel(rd, cl)`；`render_backend.h` 加 `cancel` 钩子；`console_backend.c` / `gl_backend.c`（EGL 真实版 + 无 EGL stub 版）各自 `cancel` 实现（与 submit 同源 `free(cl)`），stub 版 `gl_cancel_stub` 改名 `gl_cancel` 使公共 struct 注册在无 EGL 编译下也合法
+- `render.c::ky_rd_cancel` NULL 守卫，委托 backend `cancel`
+- `test_render.c` +3 cancel 断言（abort 路径 / `cancel(NULL)` / `cancel(rd,NULL)`）
+- 验证：普通 23/23 + ASan 23/23 + no-EGL stub 编译 demo exit=0；ASan 残留 112B 泄漏在 GL/EGL 后端库（`<unknown module>` 各 56B，无 cmd-list 符号），属已知 G15，与本次改动无关
+
+**下一刀：G14 APK 打包；或 G12 Vulkan 后端（需真 GPU，本无头环境受阻）。**
 
 **已完成：安全漏洞扫描与修复——`src/script/vm.c` + `src/script/parser.c`**
 发现并修复 3 个严重 bug：
