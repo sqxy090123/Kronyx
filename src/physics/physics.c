@@ -26,6 +26,9 @@ kyPhysicsWorld *ky_physics_create(kyVec3 gravity) {
     memset(pw->collider_index, 0, sizeof(pw->collider_index));
     pw->broad_fn = NULL;
     pw->narrow_fn = NULL;
+    pw->constraint_count = 0;
+    pw->next_constraint_id = 1;
+    memset(pw->constraints, 0, sizeof(pw->constraints));
     pw->broad_exts = (kyExtents *)calloc(KY_PHYSICS_MAX_BODIES, sizeof(kyExtents));
     pw->broad_ids  = (uint32_t  *)calloc(KY_PHYSICS_MAX_BODIES, sizeof(uint32_t));
     return pw;
@@ -111,6 +114,170 @@ void ky_physics_set_force_field(kyPhysicsWorld *pw, uint32_t id, kyForceField fi
     kyPhysForceField *ff = find_force_field(pw, id);
     if (ff) ff->field = field;
 }
+
+/* ===== Constraint / joint system (G9) ===== */
+
+static int body_index_valid(const kyPhysicsWorld *pw, uint32_t body_id) {
+    /* 0 = static world; otherwise must be a registered body. */
+    if (body_id == 0) return 1;
+    return body_id >= 1 && body_id <= (uint32_t)pw->body_count &&
+           pw->bodies[body_id - 1].alive;
+}
+
+uint32_t ky_physics_add_constraint(kyPhysicsWorld *pw, const kyConstraintDesc *desc) {
+    if (!pw || !desc) return 0;
+    if (desc->type != KY_CONSTRAINT_DISTANCE &&
+        desc->type != KY_CONSTRAINT_HINGE) return 0;
+    if (!body_index_valid(pw, desc->body_a)) return 0;
+    if (!body_index_valid(pw, desc->body_b)) return 0;
+    if (pw->constraint_count >= KY_PHYSICS_MAX_CONSTRAINTS) return 0;
+
+    uint32_t id = pw->next_constraint_id++;
+    kyPhysConstraint *c = &pw->constraints[pw->constraint_count++];
+    c->alive = 1;
+    c->id = id;
+    c->desc = *desc;
+    return id;
+}
+
+int ky_physics_remove_constraint(kyPhysicsWorld *pw, uint32_t id) {
+    if (!pw || id == 0) return 0;
+    for (int i = 0; i < pw->constraint_count; i++) {
+        if (pw->constraints[i].alive && pw->constraints[i].id == id) {
+            pw->constraints[i].alive = 0;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int ky_physics_get_constraint_count(const kyPhysicsWorld *pw) {
+    return pw ? pw->constraint_count : 0;
+}
+
+/* Anchor world position: static-world end uses the given coordinate
+ * directly; the dynamic end rotates its local anchor by the body quat
+ * and translates to the body origin. */
+static kyVec3 constraint_anchor_world(const kyRigidBody *b, const kyVec3 *local) {
+    if (!b) return *local;
+    kyVec3 rotated = ky_quat_rotate(b->rotation, *local);
+    return ky_vec3_add(b->position, rotated);
+}
+
+/* World-space velocity of an anchor point on a body: linear velocity
+ * plus the tangential contribution from angular velocity. */
+static kyVec3 constraint_anchor_velocity(const kyRigidBody *b, kyVec3 anchor_world) {
+    if (!b) return ky_vec3_zero();
+    kyVec3 r = ky_vec3_sub(anchor_world, b->position);
+    return ky_vec3_add(b->linear_velocity, ky_vec3_cross(b->angular_velocity, r));
+}
+
+/* 1 scalar rotation (radians) encoded in a quat's angle around +Z,
+ * for 2D hinge angle bookkeeping. */
+static float quat_z_angle(const kyQuat *q) {
+    /* q = (0, 0, sin(a/2), cos(a/2)) for a pure Z rotation; extract a. */
+    float s = 2.0f * q->z * q->w;
+    float c = 1.0f - 2.0f * q->z * q->z;
+    return atan2f(s, c);
+}
+
+static void quat_z_rotate(kyQuat *q, float delta) {
+    kyQuat d = ky_quat_axis_angle(ky_vec3(0.0f, 0.0f, 1.0f), delta);
+    *q = ky_quat_normalize(ky_quat_mul(d, *q));
+}
+
+static void solve_distance(kyPhysicsWorld *pw, kyPhysConstraint *c) {
+    kyPhysBody *ba = c->desc.body_a ? &pw->bodies[c->desc.body_a - 1] : NULL;
+    kyPhysBody *bb = c->desc.body_b ? &pw->bodies[c->desc.body_b - 1] : NULL;
+    kyRigidBody *ra = ba ? &ba->body : NULL;
+    kyRigidBody *rb = bb ? &bb->body : NULL;
+    float inv_a = ra ? ra->inv_mass : 0.0f;
+    float inv_b = rb ? rb->inv_mass : 0.0f;
+    float inv_sum = inv_a + inv_b;
+    if (inv_sum <= 0.0f) return; /* both static: nothing to do */
+
+    kyVec3 wa = constraint_anchor_world(ra, &c->desc.local_a);
+    kyVec3 wb = constraint_anchor_world(rb, &c->desc.local_b);
+    kyVec3 d = ky_vec3_sub(wb, wa);
+    float len = ky_vec3_len(d);
+    if (len < 1e-6f) return; /* zero-length: skip to avoid direction divide */
+
+    kyVec3 n = ky_vec3_scale(d, 1.0f / len);
+    float err = len - c->desc.distance;
+
+    /* Position correction: project both anchors onto target distance. */
+    if (ra) ra->position = ky_vec3_add(ra->position,
+        ky_vec3_scale(n, err * (inv_a / inv_sum)));
+    if (rb) rb->position = ky_vec3_sub(rb->position,
+        ky_vec3_scale(n, err * (inv_b / inv_sum)));
+
+    /* Velocity correction: kill relative velocity along the constraint axis. */
+    wa = constraint_anchor_world(ra, &c->desc.local_a);
+    wb = constraint_anchor_world(rb, &c->desc.local_b);
+    kyVec3 va = constraint_anchor_velocity(ra, wa);
+    kyVec3 vb = constraint_anchor_velocity(rb, wb);
+    float rel = ky_vec3_dot(ky_vec3_sub(vb, va), n);
+    if (ra) ra->linear_velocity = ky_vec3_add(ra->linear_velocity,
+        ky_vec3_scale(n, rel * inv_a));
+    if (rb) rb->linear_velocity = ky_vec3_sub(rb->linear_velocity,
+        ky_vec3_scale(n, rel * inv_b));
+}
+
+static void solve_hinge(kyPhysicsWorld *pw, kyPhysConstraint *c) {
+    kyPhysBody *ba = c->desc.body_a ? &pw->bodies[c->desc.body_a - 1] : NULL;
+    kyPhysBody *bb = c->desc.body_b ? &pw->bodies[c->desc.body_b - 1] : NULL;
+    kyRigidBody *ra = ba ? &ba->body : NULL;
+    kyRigidBody *rb = bb ? &bb->body : NULL;
+    float inv_a = ra ? ra->inv_mass : 0.0f;
+    float inv_b = rb ? rb->inv_mass : 0.0f;
+    float inv_sum = inv_a + inv_b;
+    if (inv_sum <= 0.0f) return;
+
+    kyVec3 wa = constraint_anchor_world(ra, &c->desc.local_a);
+    kyVec3 wb = constraint_anchor_world(rb, &c->desc.local_b);
+    /* Position: project the two anchors to coincide. */
+    kyVec3 gap = ky_vec3_sub(wa, wb);
+    if (ra) ra->position = ky_vec3_sub(ra->position,
+        ky_vec3_scale(gap, inv_a / inv_sum));
+    if (rb) rb->position = ky_vec3_add(rb->position,
+        ky_vec3_scale(gap, inv_b / inv_sum));
+
+    /* Angle: keep (angle_a - angle_b) at desc->angle_offset. */
+    float diff = quat_z_angle(&ra->rotation) - quat_z_angle(&rb->rotation) - c->desc.angle_offset;
+    /* Wrap into [-pi, pi] so the correction takes the short path. */
+    if (diff > (float)KY_PI)   diff -= 2.0f * (float)KY_PI;
+    if (diff < -(float)KY_PI)  diff += 2.0f * (float)KY_PI;
+    if (ra) quat_z_rotate(&ra->rotation, -diff * (inv_a / inv_sum));
+    if (rb) quat_z_rotate(&rb->rotation,  diff * (inv_b / inv_sum));
+
+    /* Velocity: kill relative velocity at the coincident anchor. */
+    wa = constraint_anchor_world(ra, &c->desc.local_a);
+    kyVec3 va = constraint_anchor_velocity(ra, wa);
+    kyVec3 vb = constraint_anchor_velocity(rb, wa);
+    kyVec3 rel_v = ky_vec3_sub(vb, va);
+    if (ra) ra->linear_velocity = ky_vec3_add(ra->linear_velocity,
+        ky_vec3_scale(rel_v, inv_a / inv_sum));
+    if (rb) rb->linear_velocity = ky_vec3_sub(rb->linear_velocity,
+        ky_vec3_scale(rel_v, inv_b / inv_sum));
+}
+
+static void phys_apply_constraints(kyPhysicsWorld *pw, float dt) {
+    KY_UNUSED(dt);
+    if (!pw || pw->constraint_count == 0) return;
+    for (int i = 0; i < pw->constraint_count; i++) {
+        kyPhysConstraint *c = &pw->constraints[i];
+        if (!c->alive || !c->desc.enabled) continue;
+        if (c->desc.type == KY_CONSTRAINT_DISTANCE) solve_distance(pw, c);
+        else if (c->desc.type == KY_CONSTRAINT_HINGE) solve_hinge(pw, c);
+    }
+    /* Re-derive AABBs for any body touched by an active constraint. */
+    for (int i = 0; i < pw->body_count; i++) {
+        kyPhysBody *b = &pw->bodies[i];
+        if (!b->alive) continue;
+        phys_body_update_aabb(b, pw);
+    }
+}
+
 
 static void phys_apply_force_fields(kyPhysicsWorld *pw, float dt) {
     if (!pw || pw->force_field_count == 0) return;
@@ -292,6 +459,10 @@ void ky_physics_step(kyPhysicsWorld *pw, float dt) {
         kyCollision ev = { p->body_a, p->body_b };
         ky_event_trigger(KY_EVENT_COLLIDE, &ev);
     }
+
+    /* Constraint solving runs after collision resolution so that joints
+     * hold even when bodies are in contact. Does not emit collision events. */
+    phys_apply_constraints(pw, dt);
 }
 
 static kyPhysBody *body_by_id(const kyPhysicsWorld *pw, uint32_t body_id) {

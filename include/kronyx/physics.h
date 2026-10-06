@@ -78,6 +78,30 @@ typedef struct kyCollision {
     uint32_t body_b;
 } kyCollision;
 
+/* Joint / constraint system (G9): distance + hinge kinematic constraints,
+ * solved once per ky_physics_step after force/gravity/collision.
+ * body_id 0 on either end means "static world" (infinite mass, the
+ * corresponding anchor is interpreted in world space). */
+typedef enum kyConstraintType {
+    KY_CONSTRAINT_DISTANCE = 0,
+    KY_CONSTRAINT_HINGE,
+} kyConstraintType;
+
+typedef struct kyConstraintDesc {
+    kyConstraintType type;
+    uint32_t body_a, body_b;   /* 0 = static world */
+    kyVec3   local_a, local_b; /* body-local anchors; world-space when body==0 */
+    float    distance;          /* DISTANCE: target anchor distance */
+    float    angle_offset;     /* HINGE: target relative rotation (radians) */
+    int      enabled;          /* 0 = disabled, not solved */
+} kyConstraintDesc;
+
+#define KY_PHYSICS_MAX_CONSTRAINTS 256
+
+KY_API uint32_t ky_physics_add_constraint(kyPhysicsWorld *pw, const kyConstraintDesc *desc);
+KY_API int      ky_physics_remove_constraint(kyPhysicsWorld *pw, uint32_t id);
+KY_API int      ky_physics_get_constraint_count(const kyPhysicsWorld *pw);
+
 /* Extents for broadphase hooks */
 typedef struct kyExtents {
     kyVec3 min;

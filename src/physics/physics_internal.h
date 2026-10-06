@@ -40,6 +40,14 @@ typedef struct kyPhysForceField {
     uint32_t      id;
 } kyPhysForceField;
 
+/* Joint / constraint entry (G9). Solved in phys_apply_constraints after
+ * collision resolution. body_id 0 on either end = static world. */
+typedef struct kyPhysConstraint {
+    kyConstraintDesc desc;
+    int       alive;
+    uint32_t  id;      /* 1-based public id */
+} kyPhysConstraint;
+
 struct kyPhysicsWorld {
     kyAllocator     alloc;
     kyVec3          gravity;
@@ -76,6 +84,11 @@ struct kyPhysicsWorld {
      * calloc/free when broad_fn is set). */
     kyExtents *broad_exts;
     uint32_t  *broad_ids;
+
+    /* Joint / constraint system (G9): static storage, no heap allocation. */
+    kyPhysConstraint constraints[KY_PHYSICS_MAX_CONSTRAINTS];
+    int               constraint_count;
+    uint32_t          next_constraint_id;
 };
 
 static inline int sap_event_cmp(const void *a, const void *b) {

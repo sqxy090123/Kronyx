@@ -19,6 +19,7 @@ static int failures = 0;
 
 static void test_force_fields(void);
 static void test_collision_event(void);
+static void test_constraints(void);
 int main(void) {
     printf("=== Physics Test ===\n");
 
@@ -104,6 +105,7 @@ int main(void) {
 
     test_force_fields();
     test_collision_event();
+    test_constraints();
     printf("\n=== %d tests ran, %d failures ===\n", assertions, failures);
 
     ky_physics_destroy(pw);
@@ -235,6 +237,166 @@ static void test_force_fields(void) {
     ky_physics_get_force_field_count(NULL);
     ky_physics_get_force_field(NULL, field_id);
     ky_physics_set_force_field(NULL, field_id, field);
+
+    ky_physics_destroy(pw);
+}
+
+/* ===== Constraint / Joint Tests (G9) ===== */
+
+static float quat_z_angle_of(const kyQuat *q) {
+    float s = 2.0f * q->z * q->w;
+    float c = 1.0f - 2.0f * q->z * q->z;
+    return atan2f(s, c);
+}
+
+static void test_constraints(void) {
+    kyPhysicsWorld *pw = ky_physics_create((kyVec3){0, 0, 0});
+    ASSERT(pw != NULL, "constraint: create physics world");
+
+    /* --- add validation --- */
+    kyRigidBody b = {0};
+    b.position = (kyVec3){0, 0, 0};
+    b.inv_mass = 1.0f;
+    uint32_t id_a = ky_physics_add_body(pw, &b);
+    kyRigidBody b2 = {0};
+    b2.position = (kyVec3){4, 0, 0};
+    b2.inv_mass = 1.0f;
+    uint32_t id_b = ky_physics_add_body(pw, &b2);
+    ASSERT(id_a != 0 && id_b != 0, "constraint: add two bodies");
+
+    kyConstraintDesc d = {0};
+    d.type = KY_CONSTRAINT_DISTANCE;
+    d.body_a = id_a;
+    d.body_b = id_b;
+    d.local_a = (kyVec3){0, 0, 0};
+    d.local_b = (kyVec3){0, 0, 0};
+    d.distance = 2.0f;
+    d.enabled = 1;
+    uint32_t cid = ky_physics_add_constraint(pw, &d);
+    ASSERT(cid != 0, "constraint: add distance constraint");
+    ASSERT(ky_physics_get_constraint_count(pw) == 1, "constraint: count is 1 after add");
+
+    /* invalid type rejected */
+    kyConstraintDesc bad = d;
+    bad.type = (kyConstraintType)99;
+    ASSERT(ky_physics_add_constraint(pw, &bad) == 0, "constraint: invalid type rejected");
+    /* invalid body id rejected */
+    kyConstraintDesc bad2 = d;
+    bad2.body_a = 999; /* not registered */
+    ASSERT(ky_physics_add_constraint(pw, &bad2) == 0, "constraint: invalid body_a rejected");
+    /* NULL desc / world rejected */
+    ASSERT(ky_physics_add_constraint(pw, NULL) == 0, "constraint: NULL desc rejected");
+    ASSERT(ky_physics_add_constraint(NULL, &d) == 0, "constraint: NULL world rejected");
+
+    /* --- distance position correction (one step, single-iteration solver) --- */
+    /* Two dynamic bodies at distance 4, target 2. After one step the
+     * solver pulls them together; both inv_mass=1 so each moves 1.0.
+     * (no gravity, no collision since colliders absent => AABBs unset). */
+    ky_physics_step(pw, 1.0f / 60.0f);
+    kyRigidBody ra, rb;
+    ky_physics_get_body(pw, id_a, &ra);
+    ky_physics_get_body(pw, id_b, &rb);
+    float dx = rb.position.x - ra.position.x;
+    float dist_after = fabsf(dx);
+    ASSERT(dist_after < 4.0f, "distance: anchors moved toward target");
+    ASSERT(dist_after > 0.5f && dist_after < 3.0f,
+           "distance: within plausible single-iteration band");
+
+    /* --- static-world symmetry: constraint to world keeps moving body at
+     *   a fixed distance from a static anchor. Reuse a fresh world. --- */
+    ky_physics_destroy(pw);
+    pw = ky_physics_create((kyVec3){0, 0, 0});
+    kyRigidBody static_body = {0};
+    static_body.position = (kyVec3){0, 0, 0};
+    static_body.inv_mass = 0.0f; /* static */
+    uint32_t sid = ky_physics_add_body(pw, &static_body);
+    kyConstraintDesc sd = {0};
+    sd.type = KY_CONSTRAINT_DISTANCE;
+    sd.body_a = 0;            /* static world end, anchor in world space */
+    sd.body_b = sid;
+    sd.local_a = (kyVec3){2, 0, 0}; /* world-space anchor */
+    sd.local_b = (kyVec3){0, 0, 0};
+    sd.distance = 2.0f;
+    sd.enabled = 1;
+    ASSERT(ky_physics_add_constraint(pw, &sd) != 0, "distance: static-end constraint added");
+    /* static body at origin, world anchor at (2,0,0): already at distance 2,
+     * step should keep it there (no drift). */
+    ky_physics_step(pw, 1.0f / 60.0f);
+    kyRigidBody s_after;
+    ky_physics_get_body(pw, sid, &s_after);
+    /* World anchor at (2,0,0), static body pinned at origin: the distance is
+     * already 2.0 == target on entry, so the solver leaves it exactly put
+     * (assert the held distance equals the target, not zero drift). */
+    float held = sqrtf((s_after.position.x - 2.0f) * (s_after.position.x - 2.0f) +
+                       s_after.position.y * s_after.position.y);
+    ASSERT(fabsf(held - 2.0f) < 0.05f, "distance: static end holds position");
+
+    /* --- hinge angle correction --- */
+    ky_physics_destroy(pw);
+    pw = ky_physics_create((kyVec3){0, 0, 0});
+    kyRigidBody ha = {0};
+    ha.position = (kyVec3){0, 0, 0};
+    ha.inv_mass = 1.0f;
+    /* start body_a rotated 45 deg about Z */
+    ha.rotation = ky_quat_axis_angle((kyVec3){0, 0, 1}, (float)KY_PI * 0.25f);
+    kyRigidBody hb = {0};
+    hb.position = (kyVec3){1, 0, 0};
+    hb.inv_mass = 1.0f;
+    uint32_t hid_a = ky_physics_add_body(pw, &ha);
+    uint32_t hid_b = ky_physics_add_body(pw, &hb);
+    kyConstraintDesc hd = {0};
+    hd.type = KY_CONSTRAINT_HINGE;
+    hd.body_a = hid_a;
+    hd.body_b = hid_b;
+    hd.local_a = (kyVec3){0, 0, 0};
+    hd.local_b = (kyVec3){0, 0, 0};
+    hd.angle_offset = 0.0f; /* want them aligned */
+    hd.enabled = 1;
+    ASSERT(ky_physics_add_constraint(pw, &hd) != 0, "hinge: constraint added");
+    ky_physics_step(pw, 1.0f / 60.0f);
+    kyRigidBody h_after_a, h_after_b;
+    ky_physics_get_body(pw, hid_a, &h_after_a);
+    ky_physics_get_body(pw, hid_b, &h_after_b);
+    float ang_a = quat_z_angle_of(&h_after_a.rotation);
+    float ang_b = quat_z_angle_of(&h_after_b.rotation);
+    float rel = ang_a - ang_b;
+    /* Initial relative offset was PI/4 (0.7854). A single-iteration solver
+     * splits the correction across both inv_mass=1 bodies, halving it to
+     * ~PI/8. Assert convergence (strictly smaller), not exact zero. */
+    ASSERT(fabsf(rel) < 0.7854f, "hinge: relative angle converges toward offset");
+    ASSERT(fabsf(rel) > 0.0f, "hinge: single iteration does not fully zero (expected)");
+
+    /* --- remove + idempotent --- */
+    ky_physics_destroy(pw);
+    pw = ky_physics_create((kyVec3){0, 0, 0});
+    kyRigidBody rb1 = {0};
+    rb1.position = (kyVec3){0, 0, 0};
+    rb1.inv_mass = 1.0f;
+    uint32_t rbid = ky_physics_add_body(pw, &rb1);
+    kyConstraintDesc rd = {0};
+    rd.type = KY_CONSTRAINT_DISTANCE;
+    rd.body_a = 0;
+    rd.body_b = rbid;
+    rd.distance = 1.0f;
+    rd.enabled = 1;
+    uint32_t rcid = ky_physics_add_constraint(pw, &rd);
+    ASSERT(rcid != 0, "remove: constraint added");
+    int cnt_before = ky_physics_get_constraint_count(pw);
+    ASSERT(ky_physics_remove_constraint(pw, rcid) == 1, "remove: first remove returns 1");
+    ASSERT(ky_physics_remove_constraint(pw, rcid) == 0, "remove: second remove returns 0");
+    ASSERT(ky_physics_get_constraint_count(pw) == cnt_before,
+           "remove: count unchanged (cumulative add semantics)");
+    /* removed constraint must not drift the body in a subsequent step */
+    float pos_before = rb1.position.x;
+    ky_physics_step(pw, 1.0f / 60.0f);
+    kyRigidBody rchk;
+    ky_physics_get_body(pw, rbid, &rchk);
+    ASSERT(fabsf(rchk.position.x - pos_before) < 1e-3f,
+           "remove: removed constraint no longer affects body");
+
+    /* --- null safety --- */
+    ky_physics_remove_constraint(NULL, 1);
+    ky_physics_get_constraint_count(NULL);
 
     ky_physics_destroy(pw);
 }
