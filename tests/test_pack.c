@@ -6,17 +6,19 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <process.h>
 static int file_exists(const char *path) {
-    DWORD attr = GetFileAttributesA(path);
-    return (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY));
+    DWORD attr = GetAttributesA(path) != INVALID_FILE_ATTRIBUTES;
 }
 static int cmd_exists(const char *cmd) {
     char buf[512];
     snprintf(buf, sizeof(buf), "where %s >NUL 2>&1", cmd);
     return system(buf) == 0;
 }
+static int cur_pid(void) { return _getpid(); }
 #else
 #include <sys/stat.h>
+#include <unistd.h>
 static int file_exists(const char *path) {
     struct stat st;
     return stat(path, &st) == 0;
@@ -26,6 +28,7 @@ static int cmd_exists(const char *cmd) {
     snprintf(buf, sizeof(buf), "which %s > /dev/null 2>&1", cmd);
     return system(buf) == 0;
 }
+static int cur_pid(void) { return getpid(); }
 #endif
 
 static int assertions = 0;
@@ -66,11 +69,9 @@ int main(void) {
     kyPackDesc bad = { .title = "t", .version = "1.0", .script = NULL, .out_path = "/tmp/x" };
     ASSERT(ky_pack(&bad, KY_PACK_EXE, err, sizeof(err)) != 0, "missing script rejected");
 
-    /* apk not supported yet */
+    /* apk: now succeeds, emitting a deployable Android project skeleton */
     kyPackDesc desc = { .title = "demo-game", .version = "0.1.0",
-                        .script = GAME_SCRIPT, .out_path = "/tmp/kypack_test.apk" };
-    ASSERT(ky_pack(&desc, KY_PACK_APK, err, sizeof(err)) != 0, "apk returns not-supported");
-    ASSERT(strstr(err, "apk") != NULL, "apk error mentions apk");
+                         .script = GAME_SCRIPT, .out_path = "/tmp/kypack_test.apk" };
 
     /* exe: real compile+link, then run it.
      * Requires `cc` on PATH and a prebuilt static engine lib at
@@ -150,6 +151,71 @@ int main(void) {
 #else
     SKIP("jar pack: requires zip on PATH (Unix tooling)");
 #endif
+
+    /* apk: full Android project skeleton.  Pure file assertions — no external
+     * toolchain — so it runs on every platform including Windows CI.
+     * Use a PID-unique dir: a fresh dir is guaranteed clean on every run, so
+     * no rm -rf needed (which would also shell out under ctest). */
+    {
+        char unique_dir[128];
+        snprintf(unique_dir, sizeof(unique_dir), "/tmp/kypack_test_apk_%d",
+                 (int)getpid());
+        const char *apk_root = unique_dir;
+        desc.out_path = apk_root;
+        rc = ky_pack(&desc, KY_PACK_APK, err, sizeof(err));
+        ASSERT(rc == 0, "apk pack succeeds");
+        if (rc != 0) printf("  err: %s\n", err);
+
+        char apath[1100];
+        snprintf(apath, sizeof(apath), "%s/settings.gradle", apk_root);
+        ASSERT(file_exists(apath), "apk settings.gradle exists");
+        snprintf(apath, sizeof(apath), "%s/build.gradle", apk_root);
+        ASSERT(file_exists(apath), "apk top build.gradle exists");
+        snprintf(apath, sizeof(apath), "%s/app/build.gradle", apk_root);
+        ASSERT(file_exists(apath), "apk app/build.gradle exists");
+        snprintf(apath, sizeof(apath), "%s/app/src/main/AndroidManifest.xml", apk_root);
+        ASSERT(file_exists(apath), "apk AndroidManifest.xml exists");
+        /* activity class name is PascalCase(title) with '_' segments joined,
+         * e.g. "demo-game" -> "Demo_Game"; file = <that>.java in the slash-sep
+         * package dir. */
+        snprintf(apath, sizeof(apath), "%s/app/src/main/java/com/kronyx/demo_game/Demo_Game.java", apk_root);
+        ASSERT(file_exists(apath), "apk Java activity exists");
+        snprintf(apath, sizeof(apath), "%s/app/src/main/jni/CMakeLists.txt", apk_root);
+        ASSERT(file_exists(apath), "apk jni CMakeLists.txt exists");
+        snprintf(apath, sizeof(apath), "%s/app/src/main/jni/kronyx_jni.c", apk_root);
+        ASSERT(file_exists(apath), "apk kronyx_jni.c exists");
+        snprintf(apath, sizeof(apath), "%s/app/src/main/jniLibs/README.txt", apk_root);
+        ASSERT(file_exists(apath), "apk jniLibs README exists");
+        snprintf(apath, sizeof(apath), "%s/app/src/main/assets/game.kyx", apk_root);
+        ASSERT(file_exists(apath), "apk assets/game.kyx exists");
+
+        /* script embedded verbatim into assets */
+        if (file_exists(apath)) {
+            FILE *f = fopen(apath, "r");
+            char buf[512] = {0};
+            if (f) { size_t n = fread(buf, 1, sizeof(buf) - 1, f); fclose(f); (void)n; }
+            ASSERT(strstr(buf, "function main") != NULL, "apk game.kyx contains script");
+        }
+        /* JNI bridge references the engine VM API + JNI_OnLoad */
+        snprintf(apath, sizeof(apath), "%s/app/src/main/jni/kronyx_jni.c", apk_root);
+        if (file_exists(apath)) {
+            FILE *f = fopen(apath, "r");
+            char buf[8192] = {0};
+            if (f) { size_t n = fread(buf, 1, sizeof(buf) - 1, f); fclose(f); (void)n; }
+            ASSERT(strstr(buf, "JNI_OnLoad") != NULL, "apk jni has JNI_OnLoad");
+            ASSERT(strstr(buf, "ky_vm_call") != NULL, "apk jni calls ky_vm_call");
+            ASSERT(strstr(buf, "GAME_SCRIPT") != NULL, "apk jni embeds script");
+        }
+        /* jni CMake links android libs, no host deps */
+        snprintf(apath, sizeof(apath), "%s/app/src/main/jni/CMakeLists.txt", apk_root);
+        if (file_exists(apath)) {
+            FILE *f = fopen(apath, "r");
+            char buf[4096] = {0};
+            if (f) { size_t n = fread(buf, 1, sizeof(buf) - 1, f); fclose(f); (void)n; }
+            ASSERT(strstr(buf, "kronyx_jni.c") != NULL, "apk CMake refs jni source");
+            ASSERT(strstr(buf, "log") != NULL, "apk CMake links android log lib");
+        }
+    }
 
     printf("\n=== %d tests ran, %d failures ===\n", assertions, failures);
     return failures == 0 ? 0 : 1;

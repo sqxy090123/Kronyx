@@ -211,7 +211,10 @@ if(KYR_BUILD_EDITOR)
    endif()
 endif()
 
-# Engine library (GLFW windowing + game loop)
+# Engine library (GLFW windowing + game loop).  On Android the NDK toolchain
+# has no GLFW and no host windowing; the JNI bridge (G14) drives the engine
+# headless, so ky_runtime is only built for non-Android targets.
+if(NOT ANDROID)
 add_library(ky_runtime STATIC src/engine/glfw.c src/engine/engine.c)
 target_include_directories(ky_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(ky_runtime PUBLIC ky_core)
@@ -234,7 +237,12 @@ else()
     target_link_libraries(ky_runtime PUBLIC X11 Xi Xrandr)
   endif()
 endif()
+endif() # NOT ANDROID
 
+# Anti-tamper library (game exe integration).  Host-only: Android has no
+# OpenSSL and no /proc/self/exe companion-.so model, so the two anti-tamper
+# targets (and ky_demo, which links them) are skipped under ANDROID.
+if(NOT ANDROID)
 # Anti-tamper library (game exe integration)
 add_library(ky_antitamper STATIC src/engine/anti_tamper_game.c)
 target_include_directories(ky_antitamper PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -302,6 +310,7 @@ set_target_properties(ky_demo PROPERTIES
   BUILD_RPATH "\$ORIGIN"
   INSTALL_RPATH "\$ORIGIN"
 )
+endif() # NOT ANDROID
 
 # Simple render demo
 add_executable(ky_test_render_demo tests/test_render_demo.c)
