@@ -92,7 +92,7 @@ G1 是整条产品线的主轴。G2 已在 G1 绿后落地最小集。
 | G11 | **音频** ✅ | 至少 G1 可玩 | `audio.h/c`：参数化 SFX 合成器（正弦扫频/方波/噪声/单击）+ 32 并发 voice + null-sink mix buffer（进程内 float，零系统库依赖）+ ECS `"sound"` 组件 + `audio-update` 系统；`test_audio.c` 61 断言；demo 跳跃/落地 SFX 脉冲 |
 | G12 | Vulkan 后端 | 真 GPU 环境 | 枚举已预留 `KY_RENDERER_VULKAN`；软渲染环境不做 |
 | G13 | 3D Renderer 组件 | Vulkan 或真 GL 3D 需求 | 2D 管线不冒充 3D |
-| G14 | APK 打包 | 移动目标明确时 | 现返回 not-supported |
+| G14 | APK 打包 | 移动目标明确时 | **完成**：`pack.c::pack_apk` 生成可部署 Android 工程骨架（manifest + Activity + JNI 桥 + NDK CMake + assets/game.kyx）；`ky_runtime`/anti_tamper/`ky_demo` 加 `NOT ANDROID` 守卫；规格在 `.monkeycode/specs/android-apk-packaging/`。真实 NDK 交叉编译 + gradle + 签名 deferred |
 | G15 | 脚本 GC / 对象模型 | 长驻 VM 泄漏成为事实 | 现在是 strdup/free |
 
 ### 明确不做
@@ -291,7 +291,16 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 
 至此 C11 引擎全部 .c 模块（ecs/physics/script/render/audio/scene/resource/engine + 剩余）代码体检覆盖完毕。
 
-**已完成：G9 关节 / 物理约束系统（2026-10-02，`76f71df`）。**
+**已完成：G14 APK 打包（2026-10-02，`27fef6e`）。**
+`ky_pack` 的 `KY_PACK_APK` 目标落地"可部署 Android 工程骨架"生成器（纯文件，无 NDK/gradle/签名依赖，headless 可测）：
+- `src/pack/pack.c`：`pack_apk` 生成 settings.gradle / 顶层+app build.gradle（AGP 8.1、NDK externalNativeBuild、arm64-v8a）/ AndroidManifest.xml（launcher Activity）/ `java/<pkg>/<Activity>.java`（`System.loadLibrary("kronyx")` + `nativeRun`）/ `jni/kronyx_jni.c`（`JNI_OnLoad` + `write_c_string` 转义内嵌脚本 + `ky_vm_*` 调引擎）/ `jni/CMakeLists.txt`（NDK 编 `libkronyx.so`，链 android `log`/`android` 库，**不**链 GLFW/OpenSSL/X11）/ `assets/game.kyx`（脚本原样）/ `jniLibs/README.txt`。`apk_ident`（title → 小写 Java 包段）+ `apk_activity`（PascalCase 类名），title/version 写进 .gradle/.java/.c 前转义防注入。
+- `CMakeLists.txt`：`ky_runtime` / `ky_antitamper` / `KyAntiTamper` / `ky_demo` 四目标包进 `if(NOT ANDROID)`，NDK 配置期不再 FATAL_ERROR（NDK 无 GLFW 头、无 OpenSSL）。`ky_core`/`ky_engine` 保持全量；NDK 下 `find_library(GLESv2)` 落空 → GL 后端走 stub，可接受降级。
+- 实施中修掉一处真实 UB：初版 `kronyx_jni.c` 用单一 ~千字节 `fprintf` 巨 format 串，`-O3` 下 GLIBC `__strlen_evex` 越界读 → segfault（build 树 `RC=139`、ASan 全绿掩盖了它）；拆成 `fputs` 静态前缀 + 单 `%s` 的 `fprintf` 段后 `-O3` 33/33 全绿。
+- 规格在 `.monkeycode/specs/android-apk-packaging/`；`tests/test_pack.c` 加 APK 小节（工程布局 + 脚本内嵌 + JNI + CMake 纯文件断言，全平台 headless 可跑）。
+
+**回归门：** 普通 `ctest -j1` 23/23 绿；ASan `detect_leaks=0` 23/23 绿；`ky_demo` exit=0；`-O3` Release 单测 33/33 绿。
+
+**下一刀：G12 Vulkan 后端（需真 GPU，本无头环境受阻）；或用户指派维护任务。**
 物理模块新增 distance / hinge 两类运动学约束，落地 P3-G9（"2D 复杂碰撞体或物理动画"）：
 - `include/kronyx/physics.h`：`kyConstraintType`（DISTANCE/HINGE）、`kyConstraintDesc`（type/双 body id/双 anchor 局部坐标/distance/angle_offset/enabled）、`KY_PHYSICS_MAX_CONSTRAINTS=256`、`add/remove/get_constraint_count` API；`body_id=0` 端为静止世界
 - `src/physics/physics.c` + `physics_internal.h`：`kyPhysConstraint` 静态 256 数组（无堆）；`phys_apply_constraints` 在 `ky_physics_step` 碰撞事件 emit 之后运行，单次迭代"位置投影 + 速度消除"按 inv_mass 权重分配；anchor 世界坐标经 `ky_quat_rotate`，hinge 角度经 `ky_quat_axis_angle(Z,·)`
