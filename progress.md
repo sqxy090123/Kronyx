@@ -87,7 +87,7 @@ G1 是整条产品线的主轴。G2 已在 G1 绿后落地最小集。
 |----|------|------|------|
 | G7 | **Sprite 帧动画** ✅ | G1 | 时间轴 + 图集 UV，不接骨骼 |
 | G8 | **碰撞回调导出** ✅ | G1 | 物理 contact → `ky_event_*`，供 demo/脚本 |
-| G9 | 关节 / constraints | 3D 或复杂 2D 需要时 | 现物理无 joint API |
+| G9 | 关节 / constraints | 3D 或复杂 2D 需要时 | **完成**：`physics.h/c` 加 `kyConstraintDesc`（DISTANCE/HINGE）+ `add/remove/get_constraint_count`；`body_id=0` 端为静止世界；step 末尾单次迭代位置投影+速度消除（inv_mass 权重）；`kyPhysicsWorld` 静态 256 约束数组；`test_physics.c` +15 断言 |
 | G10 | **粒子** ✅ | G7 之后 | `particle2d.h/c`：emitter 组件 + particle-update 系统 + 16384 静态池 + xorshift32 确定性模拟 + `render_frame` 内置粒子 pass（console/GL 零改动）；`test_particle.c` 30 断言；demo role 跳跃/落地脉冲 |
 | G11 | **音频** ✅ | 至少 G1 可玩 | `audio.h/c`：参数化 SFX 合成器（正弦扫频/方波/噪声/单击）+ 32 并发 voice + null-sink mix buffer（进程内 float，零系统库依赖）+ ECS `"sound"` 组件 + `audio-update` 系统；`test_audio.c` 61 断言；demo 跳跃/落地 SFX 脉冲 |
 | G12 | Vulkan 后端 | 真 GPU 环境 | 枚举已预留 `KY_RENDERER_VULKAN`；软渲染环境不做 |
@@ -290,7 +290,16 @@ ASan（`detect_leaks=0`）全量 `ctest` 18/18 绿。
 - `src/math` 目录不存在（数学为头文件内联，无独立 .c）。
 
 至此 C11 引擎全部 .c 模块（ecs/physics/script/render/audio/scene/resource/engine + 剩余）代码体检覆盖完毕。
-**下一刀：G12 Vulkan 后端（需真 GPU，本无头环境受阻）；或用户指派维护任务。**
+
+**已完成：G9 关节 / 物理约束系统（2026-10-02，`76f71df`）。**
+物理模块新增 distance / hinge 两类运动学约束，落地 P3-G9（"2D 复杂碰撞体或物理动画"）：
+- `include/kronyx/physics.h`：`kyConstraintType`（DISTANCE/HINGE）、`kyConstraintDesc`（type/双 body id/双 anchor 局部坐标/distance/angle_offset/enabled）、`KY_PHYSICS_MAX_CONSTRAINTS=256`、`add/remove/get_constraint_count` API。`body_id=0` 端为静止世界（无穷质量，anchor 为世界坐标）。
+- `src/physics/physics.c` + `physics_internal.h`：`kyPhysConstraint` 静态 256 数组（无堆）；`phys_apply_constraints` 在 `ky_physics_step` 碰撞事件 emit 之后运行，单次迭代"位置投影 + 速度消除"按 inv_mass 权重分配；anchor 世界坐标经 `ky_quat_rotate`，hinge 角度经 `ky_quat_axis_angle(Z,·)` + `ky_quat_normalize`。除零守卫（anchor 重合跳过）。
+- 设计取舍：单迭代求解器（非 Box2D 多子步），静止端对称，不触发 `KY_EVENT_COLLIDE`。规格在 `.monkeycode/specs/joint-constraints/`。
+
+**回归门：** `test_physics.c` +15 断言；全量 `ctest -j1` 23/23 绿；ASan `detect_leaks=0` 23/23 绿；`ky_demo` 无头冒烟 exit=0。
+
+**下一刀：命令列表 cancel 路径（已知债，`render.c` begin 不 submit 泄漏）；或 G14 APK 打包；或 G12 Vulkan 后端（需真 GPU，本无头环境受阻）。**
 
 **已完成：安全漏洞扫描与修复——`src/script/vm.c` + `src/script/parser.c`**
 发现并修复 3 个严重 bug：
