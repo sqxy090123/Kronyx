@@ -142,7 +142,7 @@ static int pack_exe(const kyPackDesc *desc, char *err, int err_size) {
     int n = snprintf(cmd, sizeof(cmd),
         "cc -O2 -I\"%s/include\" \"%s\" \"%s/build/libky_engine.a\" -lm -o \"%s\" 2>&1",
         KY_PACK_ENGINE_ROOT, cpath, KY_PACK_ENGINE_ROOT, desc->out_path);
-    if (n < 0 || n >= (int)sizeof(cmd)) return pack_fail(err, err_size, "cmd overflow");
+    if (n < 0 || (size_t)n >= sizeof(cmd)) return pack_fail(err, err_size, "cmd overflow");
     int rc = system(cmd);
     if (rc != 0) {
         pack_fail(err, err_size, "exe compile/link failed");
@@ -230,7 +230,7 @@ static int pack_jar(const kyPackDesc *desc, char *err, int err_size) {
     char cmd[1600];
     int n = snprintf(cmd, sizeof(cmd),
         "cd \"%s\" && zip -q -r \"%s\" META-INF assets 2>&1", tmpdir, desc->out_path);
-    if (n < 0 || n >= (int)sizeof(cmd)) return pack_fail(err, err_size, "cmd overflow");
+    if (n < 0 || (size_t)n >= sizeof(cmd)) return pack_fail(err, err_size, "cmd overflow");
     int rc = system(cmd);
     if (rc != 0) return pack_fail(err, err_size, "zip failed (is zip installed?)");
     return 0;
@@ -477,64 +477,6 @@ static int pack_apk(const kyPackDesc *desc, char *err, int err_size) {
         pkg, act);
     if (write_file(path, tmp) != 0)
         return pack_fail(err, err_size, "write Java activity failed");
-
-    /* JNI bridge: embeds the script, runs it through the Kronyx VM (R2).
-     * Declared here so it sits before pack_apk, which emits it. */
-    {
-        snprintf(path, sizeof(path), "%s/app/src/main/jni/kronyx_jni.c", root);
-        FILE *f = fopen(path, "w");
-        if (!f) return pack_fail(err, err_size, "cannot write kronyx_jni.c");
-        fputs(
-            "#include <jni.h>\n"
-            "#include <string.h>\n"
-            "#include <android/log.h>\n"
-            "#include \"kronyx/script.h\"\n"
-            "#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, \"kronyx\", __VA_ARGS__)\n"
-            "\n"
-            "/* Embedded Kronyx game script (G14): */\n", f);
-        fputs("static const char GAME_SCRIPT[] = \"", f);
-        for (const unsigned char *p = (const unsigned char *)desc->script; *p; p++) {
-            switch (*p) {
-                case '"':  fputs("\\\"", f); break;
-                case '\\': fputs("\\\\", f); break;
-                case '\n': fputs("\\n", f);  break;
-                case '\r': fputs("\\r", f);  break;
-                case '\t': fputs("\\t", f);  break;
-                default:
-                    if (*p < 0x20 || *p >= 0x7f) fprintf(f, "\\x%02x", *p);
-                    else fputc(*p, f);
-            }
-        }
-        fprintf(f,
-            "\";\n"
-            "\n"
-            "JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *unused) {\n"
-            "    (void)unused;\n"
-            "    return JNI_VERSION_1_6;\n"
-            "}\n"
-            "\n"
-            "/* Native entry: load + run the embedded script, return its code. */\n"
-            "JNIEXPORT jint JNICALL Java_%s_nativeRun(JNIEnv *env, jobject thiz) {\n"
-            "    (void)env; (void)thiz;\n"
-            "    kyVM *vm = ky_vm_create(NULL);\n"
-            "    if (!vm) { LOGI(\"vm create failed\"); return -1; }\n"
-            "    kyValue ret;\n"
-            "    memset(&ret, 0, sizeof(ret));\n"
-            "    if (ky_vm_load_string(vm, GAME_SCRIPT, \"game\") != 0) {\n"
-            "        LOGI(\"load failed\");\n"
-            "        ky_vm_destroy(vm);\n"
-            "        return -1;\n"
-            "    }\n"
-            "    int rc = ky_vm_call(vm, \"main\", NULL, 0, &ret);\n"
-            "    ky_vm_destroy(vm);\n"
-            "    if (rc != 0) return -1;\n"
-            "    if (ret.type == KYT_INT || ret.type == KYT_BOOL) return (jint)ret.as.ival;\n"
-            "    if (ret.type == KYT_FLOAT) return (jint)ret.as.fval;\n"
-            "    return 0;\n"
-            "}\n",
-            act);
-        fclose(f);
-    }
 
     return 0;
 }
