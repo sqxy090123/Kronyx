@@ -370,3 +370,17 @@ ctest --test-dir build --output-on-failure
 
 ### 已知遗留:
 - [Low] Pratt parser 交叉优先级：`1||2<<3` 解析为 `(1||2)<<3` 而非 `1||(2<<3)`；Pratt 模型的 `min_prec` 单一阈值无法表达「接受高精度但拒绝低精度」的语义；长期方案：为 logical 运算符实现独立的 parse_logical_expression 函数
+
+## G14: APK 打包 (2026-10-07)
+### 已完成:
+- [x] `pack.c::pack_apk` 生成可部署 Android 工程骨架（纯文件生成器，零 `system` 调用，headless 可测）
+- [x] 工程布局：`settings.gradle` / 顶层+`app` `build.gradle`（AGP 8.1、NDK `externalNativeBuild`、`abiFilters arm64-v8a`）/ `AndroidManifest.xml`（launcher Activity）/ `java/<pkg>/<Activity>.java`（`System.loadLibrary("kronyx")` + `nativeRun`）/ `jni/kronyx_jni.c`（`JNI_OnLoad` + 内嵌脚本 + `ky_vm_*`）/ `jni/CMakeLists.txt`（NDK 编 `libkronyx.so`，链 `log`/`android`，不链 GLFW/OpenSSL/X11）/ `assets/game.kyx`（脚本原样）/ `jniLibs/README.txt`
+- [x] `kronyx_jni.c` 经 `write_c_string` 嵌入 `desc->script`；`apk_ident`（title→小写 Java 包段）+ `apk_activity`（PascalCase 类名）；title/version 写进 .gradle/.java/.c 前转义防注入
+- [x] 一致性：Java 类名、manifest `android:name=".<Act>"`、JNI 符号 `Java_<Act>_nativeRun` 三者匹配
+- [x] `CMakeLists.txt`：`ky_runtime`/`ky_antitamper`/`KyAntiTamper`/`ky_demo` 包进 `if(NOT ANDROID)`，NDK 配置期不再 FATAL_ERROR；`ky_core`/`ky_engine` 全量编译
+- [x] 修掉一处真实 UB：初版 `kronyx_jni.c` 用单一 ~千字节 `fprintf` 巨 format 串，`-O3` 下 GLIBC `__strlen_evex` 越界读 → segfault；拆成 `fputs` 静态前缀 + 单 `%s` 的 `fprintf` 段后 `-O3` 全绿
+- [x] `tests/test_pack.c` APK 小节（工程布局 + 脚本内嵌 + JNI + CMake 纯文件断言，全平台 headless 可跑）
+- [x] 规格在 `.monkeycode/specs/android-apk-packaging/`；`pack` 测试 1/1 通过
+
+### 边界（deferred，非缺陷）:
+- [ ] 真实 NDK 交叉编译 + gradle 构建 + APK 签名 + 设备安装 —— 本环境无 NDK 工具链不可验证；`jni/CMakeLists.txt` 要求外部传入 `KRONYX_ROOT` 指向引擎源树

@@ -1085,6 +1085,7 @@ option(KYR_ENABLE_SANITIZERS "ASan/UBSan in debug"         OFF)
 | stb_image | 纹理解码 | 单头文件 |
 | Dear ImGui + ImGuizmo | 编辑器 | 子模块或 FetchContent |
 | miniaudio | 音频 | 单头文件 |
+| NDK (CMake 3.22+) | Android 交叉编译 | 仅 Android 目标；`externalNativeBuild` 生成 `libkronyx.so`，链 `log`/`android` 系统库 |
 | Python Dev Headers | Python 绑定 | `find_package(Python)` 条件引入 |
 | Unity Build 预编译头 | 编译提速 | 可选 `KYR_UNITY_BUILD` |
 
@@ -1095,6 +1096,7 @@ option(KYR_ENABLE_SANITIZERS "ASan/UBSan in debug"         OFF)
 | Windows | MSVC：`/W4 /permissive-`；导出宏 `KY_API=__declspec(dllexport/dllimport)`；链接 opengl32 |
 | Linux | GCC/Clang：`-Wall -Wextra -Werror=format`；链接 X11/wayland（GLFW 处理）；Vulkan 可选 `find_package(Vulkan)` |
 | macOS | 只启用 GL 后端（Vulkan 经 MoltenVK 可选）；需处理 OpenGL deprecated 警告 |
+| Android | NDK 工具链 + `ANDROID` CMake 变量；`CMakeLists.txt` 将 `ky_runtime`/`ky_antitamper`/`KyAntiTamper`/`ky_demo` 包进 `if(NOT ANDROID)`（无 GLFW/OpenSSL）；`ky_core`/`ky_engine`/脚本子系统全量编译；GL 后端在 NDK 下走 stub 降级；APK 经 `pack.c::pack_apk` 生成可部署工程骨架（manifest + Activity + JNI 桥 + NDK CMake + `assets/game.kyx`），真实 NDK 交叉编译/gradle/签名 deferred |
 
 - 编译器要求：C11（`-std=c11`），MSVC 2019+ / GCC 9+ / Clang 12+。
 - 导出符号由 `include/kronyx/export.h` 统一控制 `KY_API`。
@@ -1205,6 +1207,7 @@ cache/shaders/       # SPIR-V 缓存
 | **P4 脚本语言**（3-4 月） | kyx 全栈 | 预处理/词法/语法/编译/VM/GC/引擎绑定 | kyx 测试套件（覆盖强制注释、命名冲突警告、闭包）通过 |
 | **P5 编辑器**（2-3 月） | GUI 工具链 | ImGui 面板、视口、属性、控制台、性能、kyx 调试器、热重载 | 编辑器内完成"搭场景→写脚本→运行→调试"闭环 |
 | **P6 收尾**（1 月） | Vulkan 后端 + 打磨 | Vulkan 后端对齐 GL 功能、CSM 增强、发布构建裁剪 | 两后端功能等价；demo 双平台冒烟通过 |
+| **APK 打包** | 移动目标明确时 | `pack.c::pack_apk` 生成可部署 Android 工程骨架（manifest + Activity + JNI 桥 + NDK CMake + `assets/game.kyx`）；`CMakeLists.txt` 加 `NOT ANDROID` 守卫 | 工程布局齐全、脚本内嵌、JNI 调 `ky_vm_*`；真实 NDK/gradle/签名 deferred |
 
 **风险与对策**
 

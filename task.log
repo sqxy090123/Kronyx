@@ -1,8 +1,18 @@
 # Kronyx Engine - Task Log
 
-Last updated: 2026-08-28
+Last updated: 2026-10-07
 
 ## Completed Phases
+
+### G14: APK Packaging
+- [x] `pack.c::pack_apk` 生成可部署 Android 工程骨架（纯文件，零 `system` 调用）
+- [x] 工程布局：settings.gradle / 顶层+app build.gradle (AGP 8.1, NDK externalNativeBuild, arm64-v8a) / AndroidManifest.xml / Activity.java / jni/kronyx_jni.c / jni/CMakeLists.txt / assets/game.kyx / jniLibs/README.txt
+- [x] `kronyx_jni.c` 经 `write_c_string` 内嵌脚本，`JNI_OnLoad` + `ky_vm_*` 调引擎；title/version 写进 .gradle/.java/.c 前转义防注入
+- [x] `CMakeLists.txt`：`ky_runtime`/`ky_antitamper`/`KyAntiTamper`/`ky_demo` 包进 `if(NOT ANDROID)`，NDK 配置期不再因 GLFW/OpenSSL 缺失而 FATAL_ERROR；`ky_core`/`ky_engine` 全量编译
+- [x] `tests/test_pack.c` APK 小节（工程布局 + 脚本内嵌 + JNI + CMake 纯文件断言，全平台 headless 可跑）
+- [ ] Deferred: 真实 NDK 交叉编译 + gradle 构建 + APK 签名 + 设备安装（无 NDK 工具链，本环境不可验证）
+
+---
 
 ### P0: Core Layer
 - [x] CMake project skeleton
