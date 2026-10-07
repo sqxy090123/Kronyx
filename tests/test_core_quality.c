@@ -368,7 +368,10 @@ static void test_pool_grow_invalidates_pointers(void) {
     kyAllocator al = ky_default_allocator();
     kyPool p = ky_pool_create(sizeof(double), 4, &al);
     size_t cap0 = ky_pool_capacity(&p);
-    double *old_ptrs[cap0];
+    /* VLA is an optional C11 feature (MSVC has no VLA) — heap-allocate the
+     * snapshot instead of a runtime-sized array. */
+    double **old_ptrs = (double **)malloc(cap0 * sizeof(double *));
+    if (!old_ptrs) { ky_pool_destroy(&p); return; }
     for (size_t i = 0; i < cap0; i++) {
         old_ptrs[i] = (double *)ky_pool_alloc(&p);
         KY_CHECK(old_ptrs[i] != NULL);
@@ -385,6 +388,7 @@ static void test_pool_grow_invalidates_pointers(void) {
     ky_pool_free(&p, old_ptrs[1]);
     KY_CHECK(ky_pool_count(&p) == count_before);
     ky_pool_destroy(&p);
+    free(old_ptrs);
 }
 
 static void test_pool_free_invalid(void) {
