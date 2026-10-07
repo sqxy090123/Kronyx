@@ -300,7 +300,7 @@ static kyValue call_proto(kyVM *vm, kyProto *proto, kyValue *args, int argc) {
                         found = 1;
                     }
                 }
-                for (int i = 0; i < vm->proto_count && !found; i++) {
+                for (int i = 0; i < vm->proto_count && i < KYX_MAX_PROTOS && !found; i++) {
                     if (vm->protos[i].name && strcmp(vm->protos[i].name, name) == 0) {
                         vm->stack[base + A] = (kyValue){KYT_FUNCTION, .as.closure = vm->closures[i]};
                         found = 1;
@@ -482,7 +482,9 @@ kyVM *ky_vm_create(const void *info) {
 
 void ky_vm_destroy(kyVM *vm) {
     if (vm) {
-        for (int i = 0; i < vm->proto_count; i++) {
+        int pc = vm->proto_count < 0 ? 0 : vm->proto_count;
+        if (pc > KYX_MAX_PROTOS) pc = KYX_MAX_PROTOS;
+        for (int i = 0; i < pc; i++) {
             free(vm->protos[i].code);
             free(vm->protos[i].constants);
             free(vm->protos[i].name);
@@ -560,9 +562,11 @@ int ky_vm_load_file(kyVM *vm, const char *path) {
 int ky_vm_call(kyVM *vm, const char *func_name, kyValue *args, int argc, kyValue *ret) {
     if (!vm) return -1;
     /* run top-level statements (implicit __top__ proto) once before first call */
+    int pc = vm->proto_count < 0 ? 0 : vm->proto_count;
+    if (pc > KYX_MAX_PROTOS) pc = KYX_MAX_PROTOS;
     if (!vm->top_ran) {
         vm->top_ran = 1;
-        for (int i = 0; i < vm->proto_count; i++) {
+        for (int i = 0; i < pc; i++) {
             if (vm->protos[i].name && strcmp(vm->protos[i].name, "__top__") == 0 &&
                 vm->closures[i]) {
                 call_proto(vm, &vm->protos[i], NULL, 0);
@@ -570,7 +574,7 @@ int ky_vm_call(kyVM *vm, const char *func_name, kyValue *args, int argc, kyValue
             }
         }
     }
-    for (int i = 0; i < vm->proto_count; i++) {
+    for (int i = 0; i < pc; i++) {
         kyProto *p = &vm->protos[i];
         if (p->name && strcmp(p->name, func_name) == 0) {
             kyClosure *cl = vm->closures[i];
@@ -901,6 +905,43 @@ static void compile_expression(kyCompileState *cs, kyAstNode *node, int dest) {
             break;
         }
         case KY_AST_EXPR_UNOP: {
+            const char *op = node->as.unop.op;
+            /* Postfix increment/decrement: operand is always an identifier
+             * (the parser only attaches "++"/"--" to postfix expressions; a
+             * bare ident is the loop-counter case we must support).  Compile
+             * to read-modify-write.  Without this, "i++"/"i--" were silently
+             * dropped, so loop counters never advanced and any "for (...; ...;
+             * i++)" loop hung forever. */
+            if (strcmp(op, "++") == 0 || strcmp(op, "--") == 0) {
+                kyAstNode *operand = node->as.unop.operand;
+                int op_kind = (operand && operand->kind == KY_AST_EXPR_IDENT)
+                                  ? KY_AST_EXPR_IDENT
+                                  : -1;
+                const char *vname = (op_kind == KY_AST_EXPR_IDENT)
+                                        ? operand->as.ident.name
+                                        : NULL;
+                int is_inc = (op[0] == '+');
+                int lslot = (vname) ? compile_find_local(cs, vname) : -1;
+                if (lslot >= 0) {
+                    int tmp = cs->local_count + 1;
+                    compile_emit(cs, OP_MOVE, tmp, lslot, 0);
+                    compile_emit(cs, OP_LOADINT, tmp + 1, 1, 0);
+                    compile_emit(cs, is_inc ? OP_ADD : OP_SUB, tmp, tmp, tmp + 1);
+                    compile_emit(cs, OP_MOVE, lslot, tmp, 0);
+                } else if (vname) {
+                    int gidx = compile_add_string(cs, vname);
+                    int tmp = cs->local_count + 1;
+                    compile_emit(cs, OP_GETGLOBAL, tmp, gidx, 0);
+                    compile_emit(cs, OP_LOADINT, tmp + 1, 1, 0);
+                    compile_emit(cs, is_inc ? OP_ADD : OP_SUB, tmp, tmp, tmp + 1);
+                    compile_emit(cs, OP_SETGLOBAL, tmp, gidx, 0);
+                } else {
+                    compile_expression(cs, operand, dest);
+                    compile_emit(cs, OP_LOADINT, dest + 1, 1, 0);
+                    compile_emit(cs, is_inc ? OP_ADD : OP_SUB, dest, dest, dest + 1);
+                }
+                break;
+            }
             if (strcmp(node->as.unop.op, "-") == 0) {
                 int val = dest;
                 compile_expression(cs, node->as.unop.operand, val);
@@ -975,8 +1016,9 @@ kyProto *kyx_compile(kyVM *vm, kyAstNode *root, char *err_buf, int err_buf_size)
             compile_statement(&cs, stmt);
         }
         compile_emit(&cs, OP_EXIT, 0, 0, 0);
-        int id = vm->proto_count++;
+        int id = vm->proto_count;
         if (id < KYX_MAX_PROTOS && cs.code) {
+            vm->proto_count++;
             size_t code_size = cs.code_count * sizeof(int);
             vm->protos[id].code = malloc(code_size);
             if (vm->protos[id].code) {
@@ -1034,8 +1076,9 @@ kyProto *kyx_compile(kyVM *vm, kyAstNode *root, char *err_buf, int err_buf_size)
 
         compile_block(&cs, stmt->as.func_decl.body);
 
-        int id = vm->proto_count++;
+        int id = vm->proto_count;
         if (id < KYX_MAX_PROTOS && cs.code) {
+            vm->proto_count++;
             size_t code_size = cs.code_count * sizeof(int);
             vm->protos[id].code = malloc(code_size);
             if (vm->protos[id].code) {

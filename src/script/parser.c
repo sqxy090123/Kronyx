@@ -187,7 +187,14 @@ static kyAstNode *parse_postfix(kyParser *p, kyAstNode *base) {
         } else if (t->kind == KYX_TK_INC || t->kind == KYX_TK_DEC) {
             tok_advance(p);
             kyAstNode *n = ast_new(KY_AST_EXPR_UNOP, t->line);
-            n->as.unop.op[0] = t->start[0]; n->as.unop.op[1] = '\0';
+            /* Mark postfix increment/decrement with a two-char op ("++"/"--")
+             * so the compiler can distinguish them from prefix unary "-" which
+             * uses a single-char op.  Without this, "i++"/"i--" were silently
+             * dropped (compiler only handled "-" / "!" / "~"), so loop counters
+             * never advanced and any "for (...; ...; i++)" loop hung forever. */
+            n->as.unop.op[0] = (t->kind == KYX_TK_INC) ? '+' : '-';
+            n->as.unop.op[1] = n->as.unop.op[0];
+            n->as.unop.op[2] = '\0';
             n->as.unop.operand = base;
             base = n;
         } else break;

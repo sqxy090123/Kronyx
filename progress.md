@@ -15,12 +15,12 @@
 | 2D 渲染 | 可用 | Transform / Sprite / Camera2D + sprite batch + `ky2d_make_texture`；console + EGL/GLES3 |
 | 资源 | 可用 | `ky_file_read/free` + `ky_resmgr_make_pixelbuffer/raw_bytes` + payload/on_destroy；28 断言 |
 | 物理 | 可用 | 刚体 + SAP(X) + AABB 窄相 + 力场(64) + raycast |
-| 脚本 kyx | 可用、有债 | lexer/parser/VM，113 测通过；无 GC；算术统一 double；stdlib 仅 `std.print` |
-| 打包 | 部分 | exe / npm / jar 可用；apk 占位 |
+| 脚本 kyx | 可用 | lexer/parser/VM + 代际 GC（nursery/tenured 压缩）；算术统一 double；stdlib 含 `std.log` + 绑定 |
+| 打包 | 部分 | exe / npm / jar / apk 可用 |
 | 运行时 | 可用 | GLFW 窗口循环 + ky_demo（2D 平台人，走 ECS+`ky2d_render_world`；无头冒烟 OK） |
 | 反篡改 | 完成，停手 | `anti_tamper_game.c` + `anti_tamper_dll.cpp` + `anti_tamper.h`；21 断言；勿再扩 |
 | 编辑器 | 骨架 | `tools/editor`，`KYR_BUILD_EDITOR` 默认 OFF |
-| 音频 / 动画 / 关节 / Vulkan | 不存在 | 不要提前生成 |
+| 音频 / 动画 / 关节 / Vulkan | 可用 | G7 帧动画、G9 关节、G10 粒子、G11 音频、G12 Vulkan 后端均已落地 |
 
 已删死文件：`src/engine/anti_tamper.c`、`src/engine/anti_tamper_export.c`、`include/kronyx/anti_tamper_dll.h`。
 
@@ -93,7 +93,7 @@ G1 是整条产品线的主轴。G2 已在 G1 绿后落地最小集。
 | G12 | **Vulkan 后端** ✅ | lavapipe 软件驱动已可用 | `vulkan_backend.c`：实/stub 双变体（`KY_HAS_VULKAN`），真实枚举 lavapipe CPU device，create 走 instance→physical→queue→color image→readback host buf→fence 全链；pipeline 止步于 renderpass+layout（无 SPIR-V 编译器，`p->pipe=0`，destroy 守卫）；`render.c` 加 `KY_RENDERER_VULKAN` dispatch；CMake 探测 `vulkan/vulkan.h`+`libvulkan`；`test_render.c` 加无条件 vulkan 资源生命周期段（28/28）。真 GPU 光栅化 + 像素读回 deferred |
 | G13 | 3D Renderer 组件 | Vulkan 或真 GL 3D 需求 | 2D 管线不冒充 3D |
 | G14 | APK 打包 | 移动目标明确时 | **完成**：`pack.c::pack_apk` 生成可部署 Android 工程骨架（manifest + Activity + JNI 桥 + NDK CMake + assets/game.kyx）；`ky_runtime`/anti_tamper/`ky_demo` 加 `NOT ANDROID` 守卫；规格在 `.monkeycode/specs/android-apk-packaging/`。真实 NDK 交叉编译 + gradle + 签名 deferred |
-| G15 | 脚本 GC / 对象模型 | 长驻 VM 泄漏成为事实 | 现在是 strdup/free |
+| G15 | 脚本 GC / 对象模型 | 长驻 VM 泄漏成为事实 | **完成**：代际 GC（nursery/tenured 压缩 + 写屏障）+ 长驻 VM 稳定化（proto 溢出封顶、GC 压缩 `memmove` 重叠修复、for 循环 `i++/i--` 修复） |
 
 ### 明确不做
 
@@ -109,7 +109,7 @@ G1 是整条产品线的主轴。G2 已在 G1 绿后落地最小集。
 
 | 债 | 位置 | 何时修 |
 |----|------|--------|
-| 脚本无 GC，字符串/全局名 strdup 累积 | `src/script/` | 长驻 VM 测试泄漏时 |
+| ~~脚本无 GC，字符串/全局名 strdup 累积~~ | ~~`src/script/`~~ | **G15 已解决**：代际 GC + 写屏障；编译期 `gvar_names/local_names/proto.name` 仍 strdup，运行期字符串/数组/闭包全走 `ky_gc_heap_alloc` |
 | ADD/SUB/MUL 运行时输出 double，int 不保留 | `vm.c` | 绑定或脚本测试需要 int 语义时 |
 | stdlib 仅 `std.print` | script | G3 绑定里按需加，不先做 table/math 全家桶 |
 | 命令列表无 cancel，begin 不 submit 泄漏 | `render.c` | 编辑器/demo 出现中途丢帧时 |
@@ -359,3 +359,12 @@ Issue: https://github.com/sqxy090123/Kronyx/issues/2（已关闭）
 - 根因：归所有权转移给 BINOP 节点后，错误恢复路径错误地递归释放了仍归调用方所有的左子树。
 - 修复：错误路径改为 `free(n)`，仅释放 BINOP 节点，保留 `left` 的所有权。
 - 测试：PoC 现在返回干净 parse error，18/18 ctest 在普通和 ASan 构建下全部通过。
+
+**已完成：G15 脚本 GC 稳定化——长驻 VM 三大缺陷修复（2026-10-07）。**
+针对"长驻 VM 泄漏成为事实"的 G15 债，本轮修复三个使 GC 在长驻场景下真正稳定的缺陷（普通 + ASan 全量 `ctest -j1` 23/23 绿，`ky_demo` 无头 exit=0）：
+- **`vm.c::kyx_compile` proto 溢出越界**：原 `int id = vm->proto_count++;` 为"先自增再判断"，长驻 VM 反复 load 时 `proto_count` 可突破 `KYX_MAX_PROTOS`(256)，使 `ky_vm_destroy`/`ky_vm_call`/`OP_GETGLOBAL` 的 `protos[256]`/`closures[256]` 静态数组越界读。改为"先判满再自增"封顶（`__top__` 与函数声明两处），并在 `ky_vm_destroy`/`ky_vm_call` 与 `OP_GETGLOBAL` 查找循环补 `min(proto_count, KYX_MAX_PROTOS)` 上界。
+- **`gc.c` 压缩 `memcpy` 自重叠 UB**：nursery→tenured 提升、nursery 保留、nursery 压缩、tenured 压缩共 4 处 `memcpy(dst, obj, total)` 在 `dst <= obj`（写指针永不超前读指针）时前向重叠为 UB（仅 ASan `memcpy-param-overlap` 检出，普通构建被掩盖）。改 `memmove`。
+- **`vm.c` for 循环 `i++/i--` 永不递增（挂起根因）**：parser 把 postfix `++`/`--` 解析成 `KY_AST_EXPR_UNOP`（op 单字符），而 `compile_expression` 的 UNOP 只处理 `-`/`!`/`~`，`i++` 被静默丢弃 → 循环计数器永不前进 → 任何 `for(...;i++)` 无限循环挂起（新测试 `test_r8_longlived` 的 `for(let i=0;i<200;i++)` 即因此挂起整条 `kyx_gc` ctest）。修：parser 用双字符 `++`/`--` 标记 postfix（与 prefix `-` 的 `"-"` 区分），compiler 对 ident 操作数走 local `OP_MOVE/OP_LOADINT/OP_ADD-SUB/OP_MOVE` 或 global `OP_GETGLOBAL/.../OP_SETGLOBAL` 读改写。
+- **新测试 `tests/test_kyx_gc.c::test_r8_longlived`（R8.5）**：257× `load_string` 压力（验 proto 封顶不崩）+ GC 内存收敛段（`for` 循环字符串累加 + `ky_vm_gc_collect` 后 `KyGcStats` 收敛），挂进 `main()`。
+
+注：for 循环回跳 `loop_start` 置于 init 之后（条件开始处）为 C 语义正确（init 只跑一次），本轮曾误判为"应放 init 前"并已还原；真正挂起根因是 `i++` 未实现而非回跳目标。

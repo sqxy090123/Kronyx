@@ -432,7 +432,7 @@ size_t ky_gc_run_nursery(struct kyVM *vm) {
                 if (gc->tenured_used + total <= gc->tenured_size) {
                     uint32_t ten_off = gc->tenured_used;
                     kyGcObject *dst = (kyGcObject *)(gc->tenured + ten_off);
-                    memcpy(dst, obj, total);
+                    memmove(dst, obj, total);
                     dst->age = 0;
                     dst->type &= ~KY_GC_OBJ_MARKED;
                     gc->tenured_used += total;
@@ -453,7 +453,7 @@ size_t ky_gc_run_nursery(struct kyVM *vm) {
             uint32_t new_off = write;
             if (write != off) {
                 kyGcObject *dst = (kyGcObject *)(gc->nursery + write);
-                memcpy(dst, obj, total);
+                memmove(dst, obj, total);
             }
             write += total;
             if (rel_count < max_objs) {
@@ -541,7 +541,7 @@ size_t ky_gc_run_full(struct kyVM *vm) {
                 uint32_t new_off = nw;
                 if (nw != off) {
                     kyGcObject *dst = (kyGcObject *)(gc->nursery + nw);
-                    memcpy(dst, obj, total);
+                    memmove(dst, obj, total);
                 }
                 nw += total;
                 if (rel_count_n < max_n) {
@@ -572,7 +572,7 @@ size_t ky_gc_run_full(struct kyVM *vm) {
                 uint32_t new_off = tw;
                 if (tw != off) {
                     kyGcObject *dst = (kyGcObject *)(gc->tenured + tw);
-                    memcpy(dst, obj, total);
+                    memmove(dst, obj, total);
                 }
                 tw += total;
                 if (rel_count_t < max_t) {
