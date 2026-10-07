@@ -40,26 +40,18 @@ jobs:
         brew install glfw openssl
         echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl)" >> "$GITHUB_ENV"
 
-    - name: Install dependencies (Windows)
+    - name: Point at preinstalled vcpkg (Windows)
       if: runner.os == 'Windows'
       shell: powershell
       run: |
-        # Install vcpkg
-        git clone https://github.com/microsoft/vcpkg.git $env:USERPROFILE\vcpkg
-        cd $env:USERPROFILE\vcpkg
-        .\bootstrap-vcpkg.bat
-        $vcpkgDir = (Get-Location).Path
+        # windows-latest ships vcpkg at C:\vcpkg with GLFW + OpenSSL already
+        # installed for x64-windows.  Skip the old clone+bootstrap+install
+        # steps; just point the env at the preinstalled toolchain.
+        $vcpkgDir = "C:\vcpkg"
         "VCPKG_ROOT=$vcpkgDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         "OPENSSL_ROOT_DIR=$vcpkgDir\installed\x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         "VCPKG_TARGET_TRIPLET=x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         Write-Host "vcpkg root: $vcpkgDir"
-
-    - name: Install vcpkg packages (Windows)
-      if: runner.os == 'Windows'
-      shell: powershell
-      run: |
-        & "$env:VCPKG_ROOT\vcpkg.exe" install glfw3:x64-windows
-        & "$env:VCPKG_ROOT\vcpkg.exe" install openssl:x64-windows
 
     - name: Configure CMake (Linux/Mac)
       if: runner.os != 'Windows'
