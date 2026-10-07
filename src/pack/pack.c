@@ -283,7 +283,7 @@ static int pack_apk(const kyPackDesc *desc, char *err, int err_size) {
     char pkg[192];
     snprintf(pkg, sizeof(pkg), "com.kronyx.%s", pkgseg);
 
-    char path[1400];
+    char path[2048];
     char tmp[2048];
 
     /* --- project root: settings.gradle + top-level build.gradle --- */

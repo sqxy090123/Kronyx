@@ -15,7 +15,6 @@ static int cmd_exists(const char *cmd) {
     snprintf(buf, sizeof(buf), "where %s >NUL 2>&1", cmd);
     return system(buf) == 0;
 }
-static int cur_pid(void) { return _getpid(); }
 #else
 #include <sys/stat.h>
 #include <unistd.h>
@@ -28,7 +27,6 @@ static int cmd_exists(const char *cmd) {
     snprintf(buf, sizeof(buf), "which %s > /dev/null 2>&1", cmd);
     return system(buf) == 0;
 }
-static int cur_pid(void) { return getpid(); }
 #endif
 
 static int assertions = 0;

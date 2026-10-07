@@ -125,6 +125,7 @@ jobs:
           ky_test_event
           ky_test_anti_tamper
           ky_test_input
+          ky_test_core_quality
           ky_test_demo_loop
           ky_test_resource_flow
           ky_test_kyx_bindings
@@ -133,6 +134,8 @@ jobs:
           ky_test_scene_serialize
           ky_test_spritesheet
           ky_test_extreme
+          ky_test_particle
+          ky_test_audio
         )
 
         fail=0
