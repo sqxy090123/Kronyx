@@ -8,7 +8,8 @@
 #include <windows.h>
 #include <process.h>
 static int file_exists(const char *path) {
-    DWORD attr = GetAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+    DWORD attr = GetFileAttributesA(path);
+    return attr != INVALID_FILE_ATTRIBUTES;
 }
 static int cmd_exists(const char *cmd) {
     char buf[512];
