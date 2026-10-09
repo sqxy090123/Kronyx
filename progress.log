@@ -384,3 +384,23 @@ ctest --test-dir build --output-on-failure
 
 ### 边界（deferred，非缺陷）:
 - [ ] 真实 NDK 交叉编译 + gradle 构建 + APK 签名 + 设备安装 —— 本环境无 NDK 工具链不可验证；`jni/CMakeLists.txt` 要求外部传入 `KRONYX_ROOT` 指向引擎源树
+
+## Windows CI 修复 + Vulkan 测试无 ICD 时 SKIP (2026-10-07 ~ 10-09)
+### 背景:
+GitHub Actions 6 jobs（ubuntu/windows/macos × Release/Debug）Windows 侧从 CMake configure 一路失败到测试阶段；`5cebfd0` 之前 Windows 因缺 GLFW/OpenSSL 包树 + MSVC 严格 C11 + Vulkan 无 ICD 三连失败。
+
+### 已修复（5 commits，6/6 success 自 `85f42c3`）:
+- [x] `5cebfd0` `tests/test_render.c`：Vulkan 段 `ky_rd_create` 返回 NULL（无 ICD）时 `SKIP`（`skips` 计数 + `SKIP` 宏），有 ICD 环境（本地 lavapipe / macOS MoltenVK）仍全量跑 30 断言
+- [x] `5cebfd0` `src/pack/pack.c`：`pack_apk` 的 `path` 缓冲 1400→2048（消 `-Wformat-truncation`）
+- [x] `5cebfd0` `tests/test_pack.c`：删未用的 `cur_pid()`；`build.yml` 测试列表补 `ky_test_particle`/`ky_test_audio`（18→20 个测试二进制；缺的二进制 `NOT FOUND` 跳过，不算失败）
+- [x] `4ef1207` MSVC 严格 C11 三连：`src/audio/audio.c` 加 `_USE_MATH_DEFINES`（`M_PI`）；`src/script/gc.c::now_ms` 在 `_WIN32` 改 `QueryPerformanceCounter`（语义对齐 `clock_gettime(CLOCK_MONOTONIC)`）；`tests/test_core_quality.c` VLA `old_ptrs[cap0]` 改堆分配
+- [x] `171cec3` `tests/test_pack.c`：`GetAttributesA` → `GetFileAttributesA`（修 LNK2019/LNK1120）
+- [x] `85f42c3` `build.yml`：Windows 分支复用预装 `C:\vcpkg`（跳过 clone + bootstrap，每 job 省 5-10 分钟），**保留** `vcpkg install glfw3:x64-windows` + `vcpkg install openssl:x64-windows`
+
+### 关键踩坑:
+- `windows-latest`（Windows2025）预装 `C:\vcpkg` **只有工具链**（vcpkg.exe + registry），glfw3/openssl 包树**未预物化**；`find_package(glfw3 CONFIG)` 需要 `installed\x64-windows` 存在，故 `vcpkg install` 不可省。中间 `71176c2` 连 install 也省掉 → `glfw.c` C1083 `Cannot open 'GLFW/glfw3.h'` 回归，`85f42c3` 修回
+- MSVC 严格 C11 坑位清单：`M_PI` 需 `_USE_MATH_DEFINES`；`CLOCK_MONOTONIC`/`clock_gettime` 不可用（用 `QueryPerformanceCounter`）；VLA 是 C11 可选特性 MSVC 不支持（改堆）；`GetFileAttributesA`（非 `GetAttributesA`）
+
+### 回归门:
+- [x] 本地 `ctest -j1` 23/23；ASan `detect_leaks=0` 23/23；`ky_demo` 无头 exit=0
+- [x] CI 6/6 success（`85f42c3`，倒数第二 `71176c2` failure 已被修回）

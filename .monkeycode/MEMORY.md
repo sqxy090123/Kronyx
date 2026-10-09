@@ -225,7 +225,18 @@ Entries discovered by the Agent during task execution should follow this format:
 - Instructions:
   - gh CLI 的 token（ghs_1939685_ 前缀）会过期，过期后 gh 命令返回 401
   - git credential helper（/app/agent/bin/agent git-credential-helper）有独立的 GitHub token，push/pull 不受影响
-  - 查 Actions API 需从 git credential 提取 token：NEW_TOKEN=$(git credential fill <<< $'protocol=https\nhost=github.com\n' 2>/dev/null | grep '^password=' | sed 's/^password=//')，然后 GITHUB_TOKEN="$NEW_TOKEN" gh api "repos/sqxy090123/Kronyx/actions/runs?per_page=N"
-  - CI 矩阵：3 OS（ubuntu/windows/macos）× 2 构建类型（Release/Debug）= 6 jobs，全在 .github/workflows/build.yml
-  - CI 只跑 6 个测试二进制（core math ecs render physics script），不完整；Windows/Mac 的 CMake 配置常因缺依赖失败（预存问题）
-  - Ubuntu Debug/Release 两个 job 可通过 CI，Windows/Mac 在 Configure CMake 步骤失败
+   - 查 Actions API 需从 git credential 提取 token：NEW_TOKEN=$(git credential fill <<< $'protocol=https\nhost=github.com\n' 2>/dev/null | grep '^password=' | sed 's/^password=//')，然后 GITHUB_TOKEN="$NEW_TOKEN" gh api "repos/sqxy090123/Kronyx/actions/runs?per_page=N"
+   - CI 矩阵：3 OS（ubuntu/windows/macos）× 2 构建类型（Release/Debug）= 6 jobs，全在 .github/workflows/build.yml
+   - CI 跑 20 个测试二进制（build.yml `tests=( ... )` 数组），缺的二进制 `NOT FOUND` 跳过不算失败；本地 ctest 有 23 个目标（含 pack/kyx_gc 等 CI 列表外的）
+   - ubuntu/windows/macos 的 CI runner 均无 Vulkan ICD；`ky_test_render` 的 Vulkan 段在 `ky_rd_create` 返回 NULL 时走 `SKIP` 计数（非失败），本地 lavapipe / macOS MoltenVK 有 ICD 时全量跑
+   - Windows 分支复用 `windows-latest` 预装的 `C:\vcpkg`（工具链 + registry，已 bootstrap），仍需 `vcpkg install glfw3:x64-windows` + `vcpkg install openssl:x64-windows` 物化包树；`find_package(glfw3 CONFIG)` 依赖 `installed\x64-windows`
+
+[Project Knowledge Summary]
+- Date: 2026-10-09
+- Context: Discovered by Agent while fixing GitHub Actions Windows CI (commits 5cebfd0/4ef1207/171cec3/85f42c3)
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - MSVC 严格 C11 坑位清单：`M_PI` 需先 `#define _USE_MATH_DEFINES` 再 include `<math.h>`；`CLOCK_MONOTONIC`/`clock_gettime` 不可用，单调时钟用 `QueryPerformanceCounter`（`_WIN32` guard）；VLA（如 `T arr[cap]`）是 C11 可选特性 MSVC 不支持，改 `malloc/free`；Windows API 是 `GetFileAttributesA`（不是 `GetAttributesA`，后者不存在，报 LNK2019/LNK1120）
+  - Windows CI 提速：`windows-latest`（Windows2025）预装 `C:\vcpkg` 只含工具链（vcpkg.exe + registry + 已 bootstrap），glfw3/openssl 包树未预物化——跳过 clone + `bootstrap-vcpkg.bat` 可省 5-10 分钟，但 `vcpkg install glfw3/openssl:x64-windows` 必须保留；省掉 install 会致 `glfw.c` C1083 `Cannot open 'GLFW/glfw3.h'`（71176c2 曾回归，85f42c3 修回）
+  - 接手须知（当前 2026-10-09 快照）：master = `85f42c3`，CI 6/6 success；本地 ctest 23/23 + ASan(`detect_leaks=0`) 23/23 + `ky_demo` 无头 exit=0；工作区干净（仅 `build-asan/` 生成物噪音，勿提交）；下一刀见 `progress.md` §5 末段（G12 Vulkan 像素读回+真光栅化，需内嵌 SPIR-V 或 spirv-cross；或 G13 3D Renderer）；G1-G15 切片 13/15 完成（G4 暂停、G13 未开工）
+  - 查 CI 状态备用通道：无 gh CLI token 时可用 `git credential fill` 提取 github.com 的 git PAT 调 GitHub REST API（`actions/runs`），401/403 即凭据失效

@@ -2,7 +2,7 @@
 
 本文件是后续 Agent 的工作入口。先读本文件，再动手。`progress.log` 只作历史流水，不作为优先级来源。
 
-更新日期：2026-09-08
+更新日期：2026-10-09
 
 ---
 
@@ -25,7 +25,8 @@
 已删死文件：`src/engine/anti_tamper.c`、`src/engine/anti_tamper_export.c`、`include/kronyx/anti_tamper_dll.h`。
 
 构建：`cmake -B build && cmake --build build -j2`  
-测试：`ctest --test-dir /workspace/build --output-on-failure -j1`  
+测试：`ctest --test-dir /workspace/build --output-on-failure -j1`（当前 23 个测试目标全绿；CI 跑 20 个测试二进制，缺的二进制跳过而非失败）  
+CI：`.github/workflows/build.yml`，6 jobs（ubuntu/windows/macos × Release/Debug）；Windows 走 `C:\vcpkg` 预装工具链 + `vcpkg install glfw3/openssl`，Vulkan 测试无 ICD 时干净 SKIP。  
 `ky_test_render` 在 EGL 软渲染下可能偶发 SIGSEGV，单独重跑即可，与业务无关。
 
 ---
@@ -368,3 +369,15 @@ Issue: https://github.com/sqxy090123/Kronyx/issues/2（已关闭）
 - **新测试 `tests/test_kyx_gc.c::test_r8_longlived`（R8.5）**：257× `load_string` 压力（验 proto 封顶不崩）+ GC 内存收敛段（`for` 循环字符串累加 + `ky_vm_gc_collect` 后 `KyGcStats` 收敛），挂进 `main()`。
 
 注：for 循环回跳 `loop_start` 置于 init 之后（条件开始处）为 C 语义正确（init 只跑一次），本轮曾误判为"应放 init 前"并已还原；真正挂起根因是 `i++` 未实现而非回跳目标。
+
+**已完成：Windows CI 全链路修复 + Vulkan 测试无 ICD 时干净 SKIP（2026-10-07 ~ 10-09，5 commits）。**
+GitHub Actions 6 jobs（ubuntu/windows/macos × Release/Debug）从 Windows 侧编译/链接/测试失败修复到 6/6 全绿（`85f42c3` 起，`171cec3` 与 `85f42c3` 两个 success）：
+- `5cebfd0` `tests/test_render.c`：Vulkan 段 `ky_rd_create(KY_RENDERER_VULKAN)` 返回 NULL（无 ICD）时干净 `SKIP` 而非硬失败；加 `skips` 计数 + `SKIP` 宏，汇总行带 skip 数；本地 lavapipe / macOS MoltenVK 有 ICD 时仍全量跑 30 断言
+- `5cebfd0` `src/pack/pack.c`：`-Wformat-truncation` 告警——`pack_apk` 的 `path` 缓冲 1400→2048
+- `5cebfd0` `tests/test_pack.c`：删未用的 `cur_pid()`；`.github/workflows/build.yml` 测试列表补 `ky_test_particle`/`ky_test_audio`（18→20 个测试二进制；缺的二进制 `NOT FOUND` 跳过，不算失败）
+- `4ef1207` Windows MSVC 严格 C11 三连修：`src/audio/audio.c` 加 `_USE_MATH_DEFINES`（`M_PI`）；`src/script/gc.c::now_ms` 在 `_WIN32` 下改 `QueryPerformanceCounter`（单调、纳秒级，语义对齐 `clock_gettime(CLOCK_MONOTONIC)`）；`tests/test_core_quality.c` VLA `old_ptrs[cap0]` 改堆分配（VLA 是 C11 可选特性，MSVC 无）
+- `171cec3` `tests/test_pack.c`：`GetAttributesA` → `GetFileAttributesA`（修 LNK2019/LNK1120 链接错）
+- `85f42c3` `.github/workflows/build.yml`：Windows 分支复用预装的 `C:\vcpkg`（跳过 clone + `bootstrap-vcpkg.bat`，每 job 省 5-10 分钟），但**保留** `vcpkg install glfw3:x64-windows` + `vcpkg install openssl:x64-windows`（`find_package(glfw3 CONFIG)` 依赖包树已物化；中间尝试 `71176c2` 连 install 也省掉 → `glfw.c` C1083 `Cannot open 'GLFW/glfw3.h'` 回归，已由 `85f42c3` 修回）
+- 回归门：本地 `ctest -j1` 23/23；ASan `detect_leaks=0` 23/23；`ky_demo` 无头 exit=0；CI 6/6 success
+
+**下一刀：G12 Vulkan 像素读回 + 真光栅化（需内嵌合法 SPIR-V 或引入 spirv-cross）；或 G13 3D Renderer 组件；或用户指派维护 / 模块体检。**

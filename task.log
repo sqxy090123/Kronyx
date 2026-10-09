@@ -213,5 +213,17 @@ Implementing viewport, hierarchy, property inspector panels.
 |------|------|
 | 字符串分隔符为双引号 `"` | script.c:200 `while (peek(lx) != '"')`；单引号 `'` 不被识别为字符串开始 |
 | `std.print('hello')` | lex error（`'` 被当作标识符开头） |
-| `std.print("*@(@*#9!")` | 正常解析和打印 |
+| `std.print("*@(@*#!")` | 正常解析和打印 |
 | 转义支持 | `\` 后跳过一个字符（`\\`、`\"` 等） |
+
+### Windows CI 修复 + Vulkan 测试无 ICD 时 SKIP (2026-10-07 ~ 10-09)
+| 项 | 详情 |
+|------|------|
+| Vulkan 测试 `SKIP` | `tests/test_render.c`：`ky_rd_create(KY_RENDERER_VULKAN)` 返回 NULL（CI runner 无 ICD）时 `SKIP` 计数而非失败；有 ICD 环境（本地 lavapipe / macOS）全量跑。`skips` 计数 + `SKIP` 宏 |
+| Windows MSVC C11 三连 | `src/audio/audio.c`：`_USE_MATH_DEFINES`（`M_PI`）；`src/script/gc.c::now_ms`：`_WIN32` 下 `QueryPerformanceCounter`（替代 `clock_gettime(CLOCK_MONOTONIC)`）；`tests/test_core_quality.c`：VLA `old_ptrs[cap0]` 改堆分配（VLA 是 C11 可选特性，MSVC 无） |
+| Windows 链接错 | `tests/test_pack.c`：`GetAttributesA` → `GetFileAttributesA`（LNK2019/LNK1120） |
+| `-Wformat-truncation` | `src/pack/pack.c`：`pack_apk` 的 `path` 缓冲 1400→2048 |
+| CI 测试列表 | `.github/workflows/build.yml` 补 `ky_test_particle`/`ky_test_audio`（18→20 个测试二进制；缺的二进制跳过，不算失败） |
+| CI 提速 | Windows 分支复用预装 `C:\vcpkg`（跳过 clone + bootstrap，每 job 省 5-10 分钟），保留 `vcpkg install glfw3/openssl`（包树物化） |
+| 回归门 | 本地 `ctest -j1` 23/23；ASan 23/23；`ky_demo` exit=0；CI 6/6 success（`85f42c3`） |
+| 相关 commits | `5cebfd0` / `4ef1207` / `171cec3` / `85f42c3`（`71176c2` 中间回归已被修回） |
